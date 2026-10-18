@@ -166,14 +166,6 @@ ros2 launch swarm_formation gazebo_swarm_launch.py \
 
 ---
 
-## 6. Detailed Documentation & Academic Paper
-
-For comprehensive theory, derivation, and installation instructions, consult:
-1. **[Step-by-Step Installation Guide](step_by_step_installation_guide.md)**: Zero-to-Hero manual for Ubuntu 24.04 and ROS 2 Jazzy.
-2. **[IEEE Research Report](ieee_research_report.md)**: Full academic publication by Mansoor Ahmed Rind (NUST) detailing the mathematical formulations, APF derivations, and benchmark analysis.
-
----
-
 ## 7. License
 
 This project is licensed under the Apache License 2.0. See [package.xml](src/swarm_formation/package.xml) for package details.
