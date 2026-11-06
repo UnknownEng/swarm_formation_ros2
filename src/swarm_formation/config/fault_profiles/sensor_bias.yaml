@@ -1,0 +1,10 @@
+fault_profile:
+  name: "sensor_bias_profile"
+  description: "Constant range and bearing calibration offset on Robot 2"
+  faults:
+    - robot_id: 2
+      fault_type: "sensor_bias"
+      start_time: 2.0
+      end_time: 40.0
+      range_bias: 0.35
+      bearing_bias: 0.15

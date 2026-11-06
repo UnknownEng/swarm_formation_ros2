@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from geometry_msgs.msg import Pose, Twist
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Bool
 from swarm_interfaces.msg import NeighborList
 
 from .consensus import (
@@ -75,10 +76,6 @@ class GazeboSwarmNode(Node):
         self.declare_parameter('obs_damping_gain', 0.8)
         self.declare_parameter('obs_tangent_ratio', 1.0)
 
-        self.declare_parameter('fault_dropout_robot_id', 4)
-        self.declare_parameter('fault_dropout_start_sec', 5.0)
-        self.declare_parameter('fault_dropout_end_sec', 10.0)
-
         self.robot_id = int(self.get_parameter('robot_id').value)
         self.total_robots = int(self.get_parameter('total_robots').value)
         self.enable_faults = bool(self.get_parameter('enable_faults').value)
@@ -111,10 +108,6 @@ class GazeboSwarmNode(Node):
         self.k_obs_damp = float(self.get_parameter('obs_damping_gain').value)
         self.obs_tangent_ratio = float(self.get_parameter('obs_tangent_ratio').value)
 
-        self.fault_dropout_id = int(self.get_parameter('fault_dropout_robot_id').value)
-        self.fault_dropout_start = float(self.get_parameter('fault_dropout_start_sec').value)
-        self.fault_dropout_end = float(self.get_parameter('fault_dropout_end_sec').value)
-
         self.dt = 1.0 / self.control_rate
 
         # Onboard orientation & local odometry (no global x, y used)
@@ -133,7 +126,7 @@ class GazeboSwarmNode(Node):
         self.relative_obstacles: List[Tuple[float, float, float]] = []
 
         # Fault tracking
-        self.is_dropped_out = False
+        self.is_motor_killed = False
         self.start_time: Optional[float] = None
 
         # Precompute target formation offsets
@@ -144,6 +137,9 @@ class GazeboSwarmNode(Node):
         # ROS 2 Topics
         self.pub_cmd_vel = self.create_publisher(
             Twist, f'/robot_{self.robot_id}/cmd_vel', 10
+        )
+        self.sub_motor_kill = self.create_subscription(
+            Bool, f'/robot_{self.robot_id}/motor_kill', self._motor_kill_callback, 10
         )
         self.sub_neighbors = self.create_subscription(
             NeighborList, f'/robot_{self.robot_id}/neighbors', self.neighbor_callback, 10
@@ -201,38 +197,27 @@ class GazeboSwarmNode(Node):
             new_obs.append((ox, oy, o.radius))
         self.relative_obstacles = new_obs
 
-    def _check_agent_dropout(self, elapsed: float) -> bool:
-        """Simulate agent dropout fault for configured robot during dropout window."""
-        if self.enable_faults and self.robot_id == self.fault_dropout_id:
-            if self.fault_dropout_start <= elapsed <= self.fault_dropout_end:
-                if not self.is_dropped_out:
-                    self.get_logger().warn(
-                        f'Physical Robot {self.robot_id} entered FAULT DROPOUT!'
-                    )
-                    self.is_dropped_out = True
-                return True
-            if self.is_dropped_out:
-                self.get_logger().info(
-                    f'Physical Robot {self.robot_id} RECOVERED from fault dropout.'
-                )
-                self.is_dropped_out = False
-        return False
+    def _motor_kill_callback(self, msg: Bool) -> None:
+        """Handle motor kill signal from external fault injector node."""
+        if msg.data != self.is_motor_killed:
+            self.is_motor_killed = msg.data
+            if self.is_motor_killed:
+                self.get_logger().warn(f'Robot {self.robot_id} MOTOR KILLED by fault injector!')
+            else:
+                self.get_logger().info(f'Robot {self.robot_id} MOTOR RESTORED.')
 
     def control_loop(self) -> None:
         """Compute relative consensus force, convert to unicycle velocity, and publish."""
         if not self.has_received_yaw:
             return
 
+        if self.is_motor_killed:
+            self.pub_cmd_vel.publish(Twist())
+            return
+
         curr_time = self.get_clock().now().nanoseconds * 1e-9
         if self.start_time is None:
             self.start_time = curr_time
-
-        elapsed = curr_time - self.start_time
-        dropped_out = self._check_agent_dropout(elapsed)
-
-        if dropped_out:
-            self.pub_cmd_vel.publish(Twist())
-            return
 
         if self.use_resilient_method:
             fx, fy = self._compute_resilient_control(curr_time)

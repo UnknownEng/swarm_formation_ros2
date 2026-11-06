@@ -21,8 +21,14 @@ from typing import Dict, List, Optional, Tuple
 from geometry_msgs.msg import Pose
 import rclpy
 from rclpy.node import Node
-from swarm_interfaces.msg import NeighborList, NeighborMeasurement, ObstacleMeasurement
+from swarm_interfaces.msg import (
+    FaultInjection,
+    NeighborList,
+    NeighborMeasurement,
+    ObstacleMeasurement,
+)
 
+from .fault_model import apply_sensor_bias
 from .relative_sensing import compute_relative_measurement, compute_relative_obstacle
 
 
@@ -60,6 +66,7 @@ class NeighborSensorNode(Node):
         self.has_own_pose = False
 
         self.peer_poses: Dict[int, Tuple[float, float]] = {}
+        self.active_sensor_fault: Optional[FaultInjection] = None
 
         # Environmental Obstacles (Disaster Zone)
         self.disaster_obstacles: List[Tuple[float, float, float]] = [
@@ -80,6 +87,13 @@ class NeighborSensorNode(Node):
         # Subscriptions to ground truth poses from simulation environment
         self.sub_own_pose = self.create_subscription(
             Pose, f'/robot_{self.robot_id}/pose', self._own_pose_callback, 10
+        )
+
+        self.sub_sensor_fault = self.create_subscription(
+            FaultInjection,
+            f'/robot_{self.robot_id}/sensor_fault',
+            self._sensor_fault_callback,
+            10,
         )
 
         self.peer_subs = []
@@ -119,10 +133,22 @@ class NeighborSensorNode(Node):
         """Update peer robot ground truth pose."""
         self.peer_poses[peer_id] = (msg.position.x, msg.position.y)
 
+    def _sensor_fault_callback(self, msg: FaultInjection) -> None:
+        """Update active sensor fault state from fault injector node."""
+        if msg.active:
+            self.active_sensor_fault = msg
+        else:
+            self.active_sensor_fault = None
+
     def _publish_sensor_readings(self) -> None:
         """Evaluate relative sensing range and publish detected peers and obstacles."""
         if not self.has_own_pose:
             return
+
+        if self.active_sensor_fault is not None:
+            if self.active_sensor_fault.fault_type == 'intermittent_failure':
+                # Blackout drop during active intermittent fault phase
+                return
 
         msg = NeighborList()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -130,6 +156,15 @@ class NeighborSensorNode(Node):
         msg.robot_id = self.robot_id
 
         self_pos = (self.pos_x, self.pos_y)
+
+        range_bias = 0.0
+        bearing_bias = 0.0
+        if (
+            self.active_sensor_fault is not None
+            and self.active_sensor_fault.fault_type == 'sensor_bias'
+        ):
+            range_bias = self.active_sensor_fault.range_bias
+            bearing_bias = self.active_sensor_fault.bearing_bias
 
         # 1. Peer neighbor detection within finite sensing range
         for peer_id in range(1, self.total_robots + 1):
@@ -150,12 +185,20 @@ class NeighborSensorNode(Node):
             )
 
             if meas is not None:
+                dist = meas['distance']
+                bearing = meas['bearing']
+                if range_bias != 0.0 or bearing_bias != 0.0:
+                    dist, bearing = apply_sensor_bias(dist, bearing, range_bias, bearing_bias)
+
+                rel_x = dist * math.cos(bearing)
+                rel_y = dist * math.sin(bearing)
+
                 n_msg = NeighborMeasurement()
                 n_msg.neighbor_id = peer_id
-                n_msg.distance = meas['distance']
-                n_msg.bearing = meas['bearing']
-                n_msg.relative_x = meas['relative_x']
-                n_msg.relative_y = meas['relative_y']
+                n_msg.distance = dist
+                n_msg.bearing = bearing
+                n_msg.relative_x = rel_x
+                n_msg.relative_y = rel_y
                 n_msg.range_variance = meas['range_variance']
                 n_msg.bearing_variance = meas['bearing_variance']
                 msg.neighbors.append(n_msg)
@@ -175,12 +218,20 @@ class NeighborSensorNode(Node):
             )
 
             if obs_meas is not None:
+                dist = obs_meas['distance']
+                bearing = obs_meas['bearing']
+                if range_bias != 0.0 or bearing_bias != 0.0:
+                    dist, bearing = apply_sensor_bias(dist, bearing, range_bias, bearing_bias)
+
+                rel_x = dist * math.cos(bearing)
+                rel_y = dist * math.sin(bearing)
+
                 o_msg = ObstacleMeasurement()
                 o_msg.obstacle_id = obs_idx
-                o_msg.distance = obs_meas['distance']
-                o_msg.bearing = obs_meas['bearing']
-                o_msg.relative_x = obs_meas['relative_x']
-                o_msg.relative_y = obs_meas['relative_y']
+                o_msg.distance = dist
+                o_msg.bearing = bearing
+                o_msg.relative_x = rel_x
+                o_msg.relative_y = rel_y
                 o_msg.radius = obs_meas['radius']
                 msg.obstacles.append(o_msg)
 

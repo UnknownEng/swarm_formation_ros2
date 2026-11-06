@@ -15,7 +15,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/NeighborList.msg"
   "msg/LinkState.msg"
   "msg/NetworkStatus.msg"
+  "msg/FaultInjection.msg"
   "srv/SetLinkState.srv"
+  "srv/TriggerFault.srv"
   DEPENDENCIES std_msgs
 )
 

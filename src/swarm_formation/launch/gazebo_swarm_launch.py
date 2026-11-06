@@ -49,6 +49,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     headless_str = LaunchConfiguration('headless').perform(context).lower()
     world_arg = LaunchConfiguration('world').perform(context)
     params_file_arg = LaunchConfiguration('params_file').perform(context)
+    fault_profile_arg = LaunchConfiguration('fault_profile').perform(context)
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
@@ -82,6 +83,30 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
 
     world_name = 'collapsed_building' if 'collapsed_building' in world_path else 'empty'
     gz_args = f'-r -s {world_path}' if headless else f'-r {world_path}'
+
+    # Resolve fault profile
+    fault_profile = ''
+    if fault_profile_arg:
+        base_name = os.path.basename(fault_profile_arg)
+        base_cand = os.path.join(pkg_swarm, 'config', 'fault_profiles', base_name)
+        if os.path.isabs(fault_profile_arg) and os.path.exists(fault_profile_arg):
+            fault_profile = fault_profile_arg
+        elif os.path.exists(fault_profile_arg):
+            fault_profile = os.path.abspath(fault_profile_arg)
+        elif os.path.exists(base_cand):
+            fault_profile = base_cand
+        elif os.path.exists(base_cand + '.yaml'):
+            fault_profile = base_cand + '.yaml'
+        else:
+            cand = os.path.join(pkg_swarm, 'config', 'fault_profiles', fault_profile_arg)
+            if os.path.exists(cand):
+                fault_profile = cand
+            elif os.path.exists(cand + '.yaml'):
+                fault_profile = cand + '.yaml'
+    elif enable_faults:
+        cand = os.path.join(pkg_swarm, 'config', 'fault_profiles', 'robot_death.yaml')
+        if os.path.exists(cand):
+            fault_profile = cand
 
     actions = []
 
@@ -193,6 +218,21 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     )
     actions.append(network_node)
 
+    # 4. Standalone Fault Injector Node (M3)
+    if fault_profile or enable_faults:
+        fault_node = Node(
+            package='swarm_formation',
+            executable='fault_injector',
+            name='fault_injector',
+            output='screen',
+            parameters=[{
+                'fault_profile': fault_profile,
+                'total_robots': total_robots,
+                'update_rate': 20.0,
+            }],
+        )
+        actions.append(fault_node)
+
     # 4. Consolidated Parameter Bridge Node
     bridge_node = Node(
         package='ros_gz_bridge',
@@ -289,6 +329,11 @@ def generate_launch_description() -> LaunchDescription:
             'params_file',
             default_value='src/swarm_formation/config/swarm_params.yaml',
             description='Path to YAML parameter file.',
+        ),
+        DeclareLaunchArgument(
+            'fault_profile',
+            default_value='',
+            description='Path or preset name for fault scenario YAML profile.',
         ),
     ]
 

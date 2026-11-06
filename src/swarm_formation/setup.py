@@ -14,6 +14,8 @@
 
 """Setuptools build configuration for swarm_formation package."""
 
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'swarm_formation'
@@ -32,6 +34,10 @@ setup(
         ('share/' + package_name + '/urdf', ['urdf/robot.urdf']),
         ('share/' + package_name + '/worlds', ['worlds/collapsed_building.sdf']),
         ('share/' + package_name + '/config', ['config/swarm_params.yaml']),
+        (
+            'share/' + package_name + '/config/fault_profiles',
+            glob('config/fault_profiles/*.yaml'),
+        ),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -49,6 +55,7 @@ setup(
             'robot_node = swarm_formation.robot_node:main',
             'neighbor_sensor = swarm_formation.neighbor_sensor_node:main',
             'network_impairment = swarm_formation.network_impairment_node:main',
+            'fault_injector = swarm_formation.fault_injector_node:main',
             'metrics_logger = swarm_formation.metrics_logger:main',
         ],
     },
