@@ -1,13 +1,13 @@
 # Copyright 2026 Open Source Robotics Foundation, Inc.
 #
-# Licensed under the Apache License, Version 2.0 (the 'License');
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an 'AS IS' BASIS,
+# distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -47,6 +47,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     sim_duration_str = LaunchConfiguration('sim_duration').perform(context)
     headless_str = LaunchConfiguration('headless').perform(context).lower()
     world_arg = LaunchConfiguration('world').perform(context)
+    params_file_arg = LaunchConfiguration('params_file').perform(context)
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
@@ -54,6 +55,15 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     radius = float(radius_str)
     sim_duration = float(sim_duration_str)
     headless = headless_str in ['true', '1', 'yes']
+
+    # Resolve params file
+    default_params = os.path.join(pkg_swarm, 'config', 'swarm_params.yaml')
+    if os.path.isabs(params_file_arg) and os.path.exists(params_file_arg):
+        params_file = params_file_arg
+    elif os.path.exists(params_file_arg):
+        params_file = os.path.abspath(params_file_arg)
+    else:
+        params_file = default_params
 
     # Resolve world path
     if os.path.isabs(world_arg) and os.path.exists(world_arg):
@@ -125,22 +135,25 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         bridge_remappings.append((f'/model/robot_{i}/cmd_vel', f'/robot_{i}/cmd_vel'))
         bridge_remappings.append((f'/model/robot_{i}/pose', f'/robot_{i}/pose'))
 
+        # Parameters list: load YAML params first, then apply overrides
+        node_params = []
+        if os.path.exists(params_file):
+            node_params.append(params_file)
+        node_params.append({
+            'robot_id': i,
+            'total_robots': total_robots,
+            'enable_faults': enable_faults,
+            'use_resilient_method': use_resilient,
+            'formation_radius': radius,
+        })
+
         # Gazebo Swarm Controller Node
         controller_node = Node(
             package='swarm_formation',
-            executable='gazebo_node',
+            executable='robot_node',
             name=f'gazebo_node_{i}',
             output='screen',
-            parameters=[{
-                'robot_id': i,
-                'total_robots': total_robots,
-                'enable_faults': enable_faults,
-                'use_resilient_method': use_resilient,
-                'formation_radius': radius,
-                'control_rate': 50.0,
-                'max_linear_vel': 1.4,
-                'max_angular_vel': 3.0,
-            }],
+            parameters=node_params,
         )
         actions.append(controller_node)
 
@@ -230,6 +243,11 @@ def generate_launch_description() -> LaunchDescription:
             'world',
             default_value='src/swarm_formation/worlds/collapsed_building.sdf',
             description='Path or filename of the Gazebo SDF world file.',
+        ),
+        DeclareLaunchArgument(
+            'params_file',
+            default_value='src/swarm_formation/config/swarm_params.yaml',
+            description='Path to YAML parameter file.',
         ),
     ]
 

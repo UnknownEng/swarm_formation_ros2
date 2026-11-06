@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Setuptools build configuration for swarm_formation package."""
+
 from setuptools import find_packages, setup
 
 package_name = 'swarm_formation'
@@ -29,6 +31,7 @@ setup(
         ),
         ('share/' + package_name + '/urdf', ['urdf/robot.urdf']),
         ('share/' + package_name + '/worlds', ['worlds/collapsed_building.sdf']),
+        ('share/' + package_name + '/config', ['config/swarm_params.yaml']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -43,6 +46,7 @@ setup(
     entry_points={
         'console_scripts': [
             'gazebo_node = swarm_formation.gazebo_node:main',
+            'robot_node = swarm_formation.robot_node:main',
             'metrics_logger = swarm_formation.metrics_logger:main',
         ],
     },

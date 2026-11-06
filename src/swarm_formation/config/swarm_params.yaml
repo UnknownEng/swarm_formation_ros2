@@ -1,0 +1,46 @@
+/**:
+  ros__parameters:
+    # Swarm Geometry and General Configuration
+    total_robots: 5
+    formation_radius: 2.0
+    control_rate: 50.0
+
+    # Kinematic Limits
+    max_linear_vel: 1.4
+    max_angular_vel: 3.0
+
+    # Consensus Gains
+    linear_gain_kp: 1.8
+    damping_gain_kd: 0.5
+    yaw_gain_kyaw: 4.0
+
+    # Huber Loss & Robust Consensus
+    huber_delta: 2.0
+    ema_alpha: 0.35
+    heartbeat_timeout: 1.2
+
+    # Layer 1: Peer-to-Peer APF Safety Barrier
+    apf_collision_dist: 0.50
+    apf_safe_dist: 1.10
+    apf_influence_dist: 1.80
+    apf_repulsion_gain: 1.2
+    apf_barrier_gain: 2.0
+    apf_damping_gain: 1.5
+    apf_lateral_ratio: 0.6
+
+    # Layer 2: Environmental Obstacle APF Barrier
+    obs_influence_dist: 0.45
+    obs_safe_dist: 0.30
+    obs_repulsion_gain: 0.6
+    obs_barrier_gain: 0.8
+    obs_damping_gain: 0.8
+    obs_tangent_ratio: 1.0
+
+    # Fault Injection Parameters
+    fault_packet_loss_rate: 0.15
+    fault_noise_std: 0.18
+    fault_delay_min: 0.05
+    fault_delay_max: 0.15
+    fault_dropout_robot_id: 4
+    fault_dropout_start_sec: 5.0
+    fault_dropout_end_sec: 10.0
