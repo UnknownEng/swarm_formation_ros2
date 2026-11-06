@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 set -e
 
 echo "=========================================================================="
@@ -11,13 +11,21 @@ export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '^/mnt/' | tr '\n' ':' | sed 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
+# Stop leftovers of a previous run of THIS workspace only (never unrelated gz/ruby/ros2).
+WS_DIR="$(pwd)"
+stop_previous_run() {
+    pkill -TERM -f "gz sim .*collapsed_building" 2>/dev/null || true
+    pkill -TERM -f "${WS_DIR}/install/swarm_formation" 2>/dev/null || true
+    pkill -TERM -f "parameter_bridge .*/model/robot_1/cmd_vel" 2>/dev/null || true
+    sleep 2
+    pkill -KILL -f "gz sim .*collapsed_building" 2>/dev/null || true
+    pkill -KILL -f "${WS_DIR}/install/swarm_formation" 2>/dev/null || true
+    pkill -KILL -f "parameter_bridge .*/model/robot_1/cmd_vel" 2>/dev/null || true
+}
+
 echo ""
 echo ">>> [1/3] Running Gazebo Part 1: Baseline Formation (No APF / No Faults)..."
-pkill -9 -f "gz sim" 2>/dev/null || true
-pkill -9 -f gazebo_node 2>/dev/null || true
-pkill -9 -f metrics_logger 2>/dev/null || true
-pkill -9 -f parameter_bridge 2>/dev/null || true
-killall -9 gz ruby gzserver gzclient 2>/dev/null || true
+stop_previous_run
 sleep 4
 ros2 launch swarm_formation gazebo_swarm_launch.py \
     enable_faults:=false \
@@ -27,11 +35,7 @@ ros2 launch swarm_formation gazebo_swarm_launch.py \
 
 echo ""
 echo ">>> [2/3] Running Gazebo Part 2: Real-World Faults (15% drop, noise, agent 4 dropout)..."
-pkill -9 -f "gz sim" 2>/dev/null || true
-pkill -9 -f gazebo_node 2>/dev/null || true
-pkill -9 -f metrics_logger 2>/dev/null || true
-pkill -9 -f parameter_bridge 2>/dev/null || true
-killall -9 gz ruby gzserver gzclient 2>/dev/null || true
+stop_previous_run
 sleep 4
 ros2 launch swarm_formation gazebo_swarm_launch.py \
     enable_faults:=true \
@@ -41,11 +45,7 @@ ros2 launch swarm_formation gazebo_swarm_launch.py \
 
 echo ""
 echo ">>> [3/3] Running Gazebo Part 3: Resilient Consensus + APF Safety Barrier..."
-pkill -9 -f "gz sim" 2>/dev/null || true
-pkill -9 -f gazebo_node 2>/dev/null || true
-pkill -9 -f metrics_logger 2>/dev/null || true
-pkill -9 -f parameter_bridge 2>/dev/null || true
-killall -9 gz ruby gzserver gzclient 2>/dev/null || true
+stop_previous_run
 sleep 4
 ros2 launch swarm_formation gazebo_swarm_launch.py \
     enable_faults:=true \

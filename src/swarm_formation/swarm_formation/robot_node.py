@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 from geometry_msgs.msg import PoseStamped, Twist
-import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
 from swarm_interfaces.msg import NeighborList
@@ -26,12 +25,18 @@ from swarm_interfaces.msg import NeighborList
 from .consensus import compute_target_offsets
 from .controllers import create_controller
 from .kinematics import compute_unicycle_twist
+from .node_runner import run_node
 from .potential_field import (
     compute_peer_safety_scale,
     compute_relative_obstacle_apf,
     compute_relative_peer_apf,
 )
-from .relative_sensing import transform_body_to_reference
+from .relative_sensing import (
+    compute_heartbeat_mask,
+    transform_body_to_reference,
+    update_relative_store,
+    YawHistory,
+)
 
 
 class GazeboSwarmNode(Node):
@@ -118,8 +123,9 @@ class GazeboSwarmNode(Node):
         self.vel_y = 0.0
         self.current_v = 0.0
         self.has_received_yaw = False
+        self.yaw_history = YawHistory()
 
-        # Relative measurements storage: neighbor_id -> (dx, dy, rel_vx, rel_vy, timestamp)
+        # Current neighbor table: neighbor_id -> (dx, dy, rel_vx, rel_vy, measurement_time)
         self.relative_neighbors: Dict[int, Tuple[float, float, float, float, float]] = {}
         self.filtered_relative: Dict[int, Tuple[float, float, float, float]] = {}
         self.last_valid_sensor_times: Dict[int, float] = {}
@@ -177,26 +183,23 @@ class GazeboSwarmNode(Node):
         cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
         self.yaw = math.atan2(siny_cosp, cosy_cosp)
         self.has_received_yaw = True
+        self.yaw_history.add(self.get_clock().now().nanoseconds * 1e-9, self.yaw)
 
     def neighbor_callback(self, msg: NeighborList) -> None:
         """Handle onboard relative range-bearing measurements of peers and obstacles."""
         now = self.get_clock().now().nanoseconds * 1e-9
 
-        # Process peer relative measurements
+        # Peer measurements: rotate with the heading at measurement time, keep only the
+        # peers in this list (stale neighbors stop influencing control).
+        measurements = []
         for n in msg.neighbors:
-            peer_id = n.neighbor_id
-            # Transform body-frame relative displacement to reference frame
-            dx, dy = transform_body_to_reference(n.relative_x, n.relative_y, self.yaw)
-
-            # Estimate relative velocity via finite difference if previously observed
-            rel_vx, rel_vy = 0.0, 0.0
-            if peer_id in self.relative_neighbors:
-                prev_dx, prev_dy, _, _, prev_time = self.relative_neighbors[peer_id]
-                dt_meas = max(now - prev_time, 1e-4)
-                rel_vx = (dx - prev_dx) / dt_meas
-                rel_vy = (dy - prev_dy) / dt_meas
-
-            self.relative_neighbors[peer_id] = (dx, dy, rel_vx, rel_vy, now)
+            t_meas = n.stamp.sec + n.stamp.nanosec * 1e-9
+            if t_meas <= 0.0:
+                t_meas = now  # unstamped (legacy) measurement
+            measurements.append((n.neighbor_id, n.relative_x, n.relative_y, t_meas))
+        self.relative_neighbors = update_relative_store(
+            self.relative_neighbors, measurements, self._yaw_at
+        )
 
         # Process obstacle relative detections
         new_obs: List[Tuple[float, float, float]] = []
@@ -204,6 +207,11 @@ class GazeboSwarmNode(Node):
             ox, oy = transform_body_to_reference(o.relative_x, o.relative_y, self.yaw)
             new_obs.append((ox, oy, o.radius))
         self.relative_obstacles = new_obs
+
+    def _yaw_at(self, t: float) -> float:
+        """Return the estimated heading at time t (current heading if unknown)."""
+        yaw = self.yaw_history.lookup(t)
+        return self.yaw if yaw is None else yaw
 
     def _motor_kill_callback(self, msg: Bool) -> None:
         """Handle motor kill signal from external fault injector node."""
@@ -261,15 +269,18 @@ class GazeboSwarmNode(Node):
 
     def _compute_resilient_control(self, curr_time: float) -> Tuple[float, float]:
         """Compute robust Huber consensus with dual-layer APF safety barrier."""
-        active_mask: Dict[int, bool] = {}
+        # Heartbeat on measurement age, not reception time: the network node re-publishes
+        # the last delivered measurement for up to 1.5 s, which used to hide lost robots.
+        active_mask = compute_heartbeat_mask(
+            self.relative_neighbors, list(self.target_offsets.keys()), curr_time,
+            self.heartbeat_timeout,
+        )
 
         for n_id in self.target_offsets.keys():
             if n_id not in self.relative_neighbors:
                 continue
 
-            raw_dx, raw_dy, n_vx, n_vy, last_seen = self.relative_neighbors[n_id]
-            is_active = (curr_time - last_seen) <= self.heartbeat_timeout
-            active_mask[n_id] = is_active
+            raw_dx, raw_dy, n_vx, n_vy, _ = self.relative_neighbors[n_id]
 
             time_gap = curr_time - self.last_valid_sensor_times.get(n_id, 0.0)
 
@@ -317,8 +328,11 @@ class GazeboSwarmNode(Node):
         )
 
         # 2. Dual-Layer APF Layer 1: Peer Repulsive Force
+        active_filtered = {
+            pid: st for pid, st in self.filtered_relative.items() if active_mask.get(pid, False)
+        }
         fx_apf, fy_apf, min_peer_dist = compute_relative_peer_apf(
-            self.filtered_relative,
+            active_filtered,
             d_infl=self.d_infl,
             d_safe=self.d_safe,
             d_collision=self.d_collision,
@@ -355,22 +369,7 @@ class GazeboSwarmNode(Node):
 
 def main(args: Optional[List[str]] = None) -> None:
     """Entry point for Gazebo swarm node."""
-    rclpy.init(args=args)
-    node = GazeboSwarmNode()
-    try:
-        rclpy.spin(node)
-    except (KeyboardInterrupt, Exception, BaseException):
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+    run_node(GazeboSwarmNode, args)
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+builtin_interfaces/Time stamp  # time the measurement was taken (not when it was delivered)
 uint32 neighbor_id
 float64 distance
 float64 bearing

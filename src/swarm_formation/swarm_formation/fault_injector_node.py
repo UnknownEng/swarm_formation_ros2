@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ from swarm_interfaces.msg import FaultInjection
 from swarm_interfaces.srv import TriggerFault
 
 from .fault_model import FaultConfig, is_fault_active, parse_fault_yaml
+from .node_runner import run_node
 
 
 class FaultInjectorNode(Node):
@@ -177,22 +178,7 @@ class FaultInjectorNode(Node):
 
 def main(args: Optional[List[str]] = None) -> None:
     """Entry point for FaultInjectorNode."""
-    rclpy.init(args=args)
-    node = FaultInjectorNode()
-    try:
-        rclpy.spin(node)
-    except (KeyboardInterrupt, Exception, BaseException):
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+    run_node(FaultInjectorNode, args)
 
 
 if __name__ == '__main__':

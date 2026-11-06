@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ from swarm_interfaces.msg import (
 from swarm_interfaces.srv import SetLinkState
 
 from .network_model import ChannelLink, compute_packet_latency, should_drop_packet
+from .node_runner import run_node
 
 
 class NetworkImpairmentNode(Node):
@@ -273,22 +274,7 @@ class NetworkImpairmentNode(Node):
 
 def main(args: Optional[List[str]] = None) -> None:
     """Entry point for NetworkImpairmentNode."""
-    rclpy.init(args=args)
-    node = NetworkImpairmentNode()
-    try:
-        rclpy.spin(node)
-    except (KeyboardInterrupt, Exception, BaseException):
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+    run_node(NetworkImpairmentNode, args)
 
 
 if __name__ == '__main__':

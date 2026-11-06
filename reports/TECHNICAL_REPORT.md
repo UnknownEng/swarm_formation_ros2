@@ -31,27 +31,32 @@
 | APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
 | CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
 | Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
-| Full stack, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
-| Full stack without Huber, impaired | 100% | 0.255 [0.228, 0.282] | 1.116 / 0.975 | 100% | 55.9 | 0.025 |
-| Full stack without EMA, impaired | 100% | 0.226 [0.197, 0.255] | 1.036 / 0.938 | 100% | 51.3 | 0.023 |
-| Full stack without heartbeat, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
-| CBF only (no resilience), impaired | 100% | 0.211 [0.188, 0.234] | 1.110 / 0.928 | 100% | 50.8 | 0.023 |
-| Full stack, 15% drop | 100% | 0.053 [0.047, 0.060] | 0.765 / 0.660 | 100% | 37.7 | 0.005 |
-| Full stack, 30% drop | 100% | 0.099 [0.086, 0.113] | 0.766 / 0.644 | 100% | 49.3 | 0.005 |
-| Full stack, 50% drop | 100% | 0.214 [0.184, 0.244] | 0.759 / 0.614 | 100% | 64.0 | 0.006 |
-| Full stack, 50 ms delay (matched margin) | 100% | 0.162 [0.144, 0.180] | 0.873 / 0.820 | 100% | 47.6 | 0.013 |
-| Full stack, 100 ms delay (matched margin) | 100% | 0.222 [0.194, 0.250] | 0.976 / 0.912 | 100% | 55.1 | 0.023 |
-| Full stack, 200 ms delay (matched margin) | 32% | 0.287 [0.265, 0.310] | 1.208 / 1.158 | 100% | 53.5 | 0.039 |
-| Full stack, 200 ms delay (fixed 50 ms margin) | 8% | 0.318 [0.299, 0.336] | 0.870 / 0.802 | 100% | 57.5 | 0.042 |
+| Full stack, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
+| Full stack without Huber, impaired | 100% | 0.193 [0.178, 0.209] | 1.065 / 0.934 | 100% | 74.2 | 0.046 |
+| Full stack without EMA, impaired | 100% | 0.104 [0.094, 0.114] | 1.081 / 0.937 | 100% | 49.0 | 0.025 |
+| Full stack without heartbeat, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
+| CBF only (no resilience), impaired | 100% | 0.108 [0.099, 0.116] | 1.064 / 0.966 | 100% | 48.5 | 0.026 |
+| Full stack, 15% drop | 100% | 0.010 [0.008, 0.012] | 0.767 / 0.691 | 100% | 27.0 | 0.004 |
+| Full stack, 30% drop | 100% | 0.010 [0.009, 0.012] | 0.759 / 0.648 | 100% | 27.7 | 0.005 |
+| Full stack, 50% drop | 100% | 0.011 [0.009, 0.013] | 0.731 / 0.576 | 100% | 30.5 | 0.005 |
+| Full stack, 50 ms delay (matched margin) | 100% | 0.067 [0.056, 0.078] | 0.883 / 0.810 | 100% | 43.5 | 0.014 |
+| Full stack, 100 ms delay (matched margin) | 100% | 0.152 [0.133, 0.171] | 1.013 / 0.865 | 100% | 65.8 | 0.029 |
+| Full stack, 200 ms delay (matched margin) | 36% | 0.309 [0.289, 0.329] | 1.272 / 1.172 | 100% | 89.9 | 0.054 |
+| Full stack, 200 ms delay (fixed 50 ms margin) | 4% | 0.352 [0.329, 0.374] | 0.825 / 0.711 | 100% | 99.0 | 0.070 |
+
+*Results regenerated on 2026-11-07 after the Phase A fixes. Measurements now carry their measurement time, are rotated with the heading at that time, take relative velocity only from distinct measurements, and are dropped once no longer delivered.*
 
 **What the data supports:**
-- **Safety:** every CBF and APF run, in all 15 conditions with avoidance, stayed above the 0.50 m collision limit. The worst case was 0.614 m (full stack, 50% drop). Without avoidance, every run collided.
+- **Safety:** every run in all 15 conditions with avoidance stayed above the 0.50 m collision limit. The worst case was 0.576 m (full stack, 50% drop). Without avoidance, every run collided.
 - **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
 - **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
-- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.802 m). Formation accuracy does not: at 200 ms, only 32% of runs reach the formation (8% with the fixed margin). The stack works to about 100 ms of delay.
-- **Packet loss:** the formation still forms at 50% drop, but final error rises from 0.009 m to 0.214 m.
-- **Resilience components:** under nominal impairment none of them measurably helps. CBF without Huber, EMA or heartbeat does as well (0.211 m vs 0.220 m, overlapping CIs). Removing the heartbeat changes nothing at all: the network node keeps republishing a stale measurement for 1.5 s, longer than the 1.2 s heartbeat timeout, so the timeout never fires. The same is true in the ROS nodes.
-- **Under impairment**, final shape error (about 0.22 m) sits close to the 0.25 m threshold, so "reached formation" there means the robots touched the threshold, not that they settled well inside it.
+- **Packet loss:** the formation forms precisely even at 50% drop (final error 0.011 m).
+- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.711 m). Formation accuracy degrades with delay: 0.067 m at 50 ms and 0.152 m at 100 ms. At 200 ms only 36% of runs reach the formation (4% with the fixed margin). The stack works to about 100 ms of delay.
+- **Resilience components, under nominal impairment:**
+  - **EMA hurts.** Removing it halves the final error (0.202 m → 0.104 m) and the path length (74.8 m → 49.0 m), because its lag adds to the network delay.
+  - **Huber is neutral** (0.193 m without it, overlapping CIs).
+  - **The heartbeat now works** (it uses measurement age, and is unit-tested), but it changes nothing here, because no peer is silent for more than 1.2 s in these conditions. A robot-loss scenario is needed to evaluate it.
+  - **CBF with no resilience component** (0.108 m) does as well as any combination.
 
 ---
 
@@ -59,7 +64,7 @@
 
 We present a decentralized, relative-sensing multi-robot system for geometric shape formation in GPS-denied, obstacle-strewn environments, modeled after an urban collapsed-building scenario. A swarm of $N = 5$ nonholonomic differential-drive mobile robots coordinates to achieve and maintain a regular pentagon formation ($R = 2.0\,\text{m}$) without central leadership, global Cartesian positioning, or shared world coordinates. The architecture decouples into: (i) an onboard relative range-and-bearing sensing layer ($R_{\text{sense}} = 6.0\,\text{m}$), (ii) a cooperative Extended Kalman Filter (EKF) state estimator fusing unicycle odometry and neighbor bearings, (iii) three interchangeable controller families (displacement-based consensus, distance-based rigidity with stress matrices, and bearing-based orthogonal projections), (iv) an independent network impairment and fault injection engine simulating packet drop, stochastic latency, and agent blackout, and (v) an active safety layer formulated as a Control Barrier Function Quadratic Program (CBF-QP) with delay-compensated barrier expansion. 
 
-We evaluate the system in a 400-run kinematic campaign (25 seeds $\times$ 16 conditions) that mirrors the ROS node pipeline, with packet drop, delay and jitter applied to every peer measurement and Student's $t$ 95% confidence intervals. Unshielded consensus collides in every crossing run. A look-ahead CBF-QP with deadlock breaking keeps every run collision-free (worst $d_{\min} = 0.614\,\text{m}$) while still reaching the formation in 100% of clean-channel runs. It gives no energy advantage over APF. Formation accuracy holds to about 100 ms of delay and 50% packet loss; at 200 ms only 32% of runs reach the formation. The Huber, EMA and heartbeat components show no measurable benefit. The fixed stack has not yet been re-validated in Gazebo.
+We evaluate the system in a 400-run kinematic campaign (25 seeds $\times$ 16 conditions) that mirrors the ROS node pipeline, with packet drop, delay and jitter applied to every peer measurement and Student's $t$ 95% confidence intervals. Unshielded consensus collides in every crossing run. A look-ahead CBF-QP with deadlock breaking keeps every run collision-free (worst $d_{\min} = 0.576\,\text{m}$) while still reaching the formation in 100% of clean-channel runs. It gives no energy advantage over APF. Formation accuracy holds at 50% packet loss and to about 100 ms of delay; at 200 ms only 36% of runs reach the formation. Among the resilience components, EMA filtering hurts accuracy under delay, Huber is neutral, and the heartbeat is not exercised by the tested conditions. The fixed stack has not yet been re-validated in Gazebo.
 
 ---
 

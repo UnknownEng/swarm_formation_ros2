@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 import math
 import random
-from typing import Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from .kinematics import wrap_angle
 
@@ -158,3 +158,102 @@ def transform_body_to_reference(
     dx = rel_x_body * cos_h - rel_y_body * sin_h
     dy = rel_x_body * sin_h + rel_y_body * cos_h
     return dx, dy
+
+
+class YawHistory:
+    """
+    Short buffer of (time, yaw) samples for rotating delayed body-frame measurements.
+
+    A range/bearing measurement is expressed in the body frame at the time it was taken.
+    Rotating it with the heading at *reception* time adds an error equal to the rotation
+    that happened during the delay; this buffer returns the heading at measurement time.
+    """
+
+    def __init__(self, horizon_sec: float = 3.0) -> None:
+        """Create an empty history that keeps samples for ``horizon_sec`` seconds."""
+        self.horizon_sec = horizon_sec
+        self._samples: List[Tuple[float, float]] = []
+
+    def add(self, t: float, yaw: float) -> None:
+        """Append a heading sample; samples must arrive in non-decreasing time order."""
+        if self._samples and t < self._samples[-1][0]:
+            return
+        self._samples.append((t, yaw))
+        cutoff = t - self.horizon_sec
+        drop = 0
+        while drop < len(self._samples) - 1 and self._samples[drop][0] < cutoff:
+            drop += 1
+        if drop:
+            del self._samples[:drop]
+
+    def lookup(self, t: float) -> Optional[float]:
+        """Return the heading at time ``t`` (interpolated), or None if the buffer is empty."""
+        if not self._samples:
+            return None
+        if t <= self._samples[0][0]:
+            return self._samples[0][1]
+        if t >= self._samples[-1][0]:
+            return self._samples[-1][1]
+        lo, hi = 0, len(self._samples) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if self._samples[mid][0] <= t:
+                lo = mid
+            else:
+                hi = mid
+        t0, y0 = self._samples[lo]
+        t1, y1 = self._samples[hi]
+        frac = (t - t0) / max(t1 - t0, 1e-9)
+        return wrap_angle(y0 + frac * wrap_angle(y1 - y0))
+
+
+def update_relative_store(
+    prev_store: Dict[int, Tuple[float, float, float, float, float]],
+    measurements: List[Tuple[int, float, float, float]],
+    yaw_at: Callable[[float], float],
+) -> Dict[int, Tuple[float, float, float, float, float]]:
+    """
+    Build the current neighbor table from one NeighborList.
+
+    Only peers in the current list are kept, so a neighbor that is no longer delivered
+    stops influencing control. Each body-frame vector is rotated with the heading at its
+    *measurement* time. Relative velocity is a finite difference between measurements
+    with different timestamps; a re-published (unchanged) measurement keeps the previous
+    velocity instead of producing a spurious zero.
+
+    :param prev_store: Previous table, peer_id -> (dx, dy, vx, vy, t_meas).
+    :param measurements: Current list of (peer_id, rel_x_body, rel_y_body, t_meas).
+    :param yaw_at: Function returning the robot heading at a given time.
+    :return: New table, peer_id -> (dx, dy, vx, vy, t_meas).
+    """
+    store: Dict[int, Tuple[float, float, float, float, float]] = {}
+    for peer_id, rel_x, rel_y, t_meas in measurements:
+        dx, dy = transform_body_to_reference(rel_x, rel_y, yaw_at(t_meas))
+        vx, vy = 0.0, 0.0
+        prev = prev_store.get(peer_id)
+        if prev is not None:
+            pdx, pdy, pvx, pvy, pt = prev
+            if t_meas > pt + 1e-6:
+                vx, vy = (dx - pdx) / (t_meas - pt), (dy - pdy) / (t_meas - pt)
+            else:
+                vx, vy = pvx, pvy
+        store[peer_id] = (dx, dy, vx, vy, t_meas)
+    return store
+
+
+def compute_heartbeat_mask(
+    store: Dict[int, Tuple[float, float, float, float, float]],
+    known_peers: List[int],
+    now: float,
+    timeout: float,
+) -> Dict[int, bool]:
+    """
+    Mark a peer active only if it is in the current table and its measurement is fresh.
+
+    Freshness uses the measurement timestamp, so a stale measurement that the network
+    keeps re-publishing still times out.
+    """
+    return {
+        pid: pid in store and (now - store[pid][4]) <= timeout
+        for pid in known_peers
+    }

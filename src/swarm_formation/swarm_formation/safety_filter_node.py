@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 from geometry_msgs.msg import PoseStamped, Twist
-import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
 from swarm_interfaces.msg import NeighborList
 
 from .cbf_qp import compute_cbf_safe_twist
-from .relative_sensing import transform_body_to_reference
+from .node_runner import run_node
+from .relative_sensing import transform_body_to_reference, YawHistory
 
 
 class SafetyFilterNode(Node):
@@ -72,6 +72,7 @@ class SafetyFilterNode(Node):
 
         self.robot_yaw = 0.0
         self.has_received_pose = False
+        self.yaw_history = YawHistory()
 
         # Relative measurements in reference frame: peer_id -> (dx, dy)
         self.relative_peers: Dict[int, Tuple[float, float]] = {}
@@ -122,6 +123,7 @@ class SafetyFilterNode(Node):
         cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
         self.robot_yaw = math.atan2(siny_cosp, cosy_cosp)
         self.has_received_pose = True
+        self.yaw_history.add(self.get_clock().now().nanoseconds * 1e-9, self.robot_yaw)
 
     def _neighbors_callback(self, msg: NeighborList) -> None:
         """Update relative peer and obstacle detections."""
@@ -130,7 +132,12 @@ class SafetyFilterNode(Node):
 
         new_peers: Dict[int, Tuple[float, float]] = {}
         for n in msg.neighbors:
-            dx, dy = transform_body_to_reference(n.relative_x, n.relative_y, self.robot_yaw)
+            # Rotate with the heading at measurement time (the network may delay it)
+            t_meas = n.stamp.sec + n.stamp.nanosec * 1e-9
+            yaw = self.yaw_history.lookup(t_meas) if t_meas > 0.0 else None
+            if yaw is None:
+                yaw = self.robot_yaw
+            dx, dy = transform_body_to_reference(n.relative_x, n.relative_y, yaw)
             new_peers[n.neighbor_id] = (dx, dy)
         self.relative_peers = new_peers
 
@@ -181,22 +188,7 @@ class SafetyFilterNode(Node):
 
 def main(args: Optional[List[str]] = None) -> None:
     """Entry point for SafetyFilterNode."""
-    rclpy.init(args=args)
-    node = SafetyFilterNode()
-    try:
-        rclpy.spin(node)
-    except (KeyboardInterrupt, Exception, BaseException):
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+    run_node(SafetyFilterNode, args)
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 from geometry_msgs.msg import Pose
-import rclpy
 from rclpy.node import Node
 from swarm_interfaces.msg import (
     FaultInjection,
@@ -29,6 +28,7 @@ from swarm_interfaces.msg import (
 )
 
 from .fault_model import apply_sensor_bias
+from .node_runner import run_node
 from .relative_sensing import compute_relative_measurement, compute_relative_obstacle
 
 
@@ -194,6 +194,7 @@ class NeighborSensorNode(Node):
                 rel_y = dist * math.sin(bearing)
 
                 n_msg = NeighborMeasurement()
+                n_msg.stamp = msg.header.stamp  # measurement time survives network delay
                 n_msg.neighbor_id = peer_id
                 n_msg.distance = dist
                 n_msg.bearing = bearing
@@ -240,22 +241,7 @@ class NeighborSensorNode(Node):
 
 def main(args: Optional[List[str]] = None) -> None:
     """Entry point for NeighborSensorNode."""
-    rclpy.init(args=args)
-    node = NeighborSensorNode()
-    try:
-        rclpy.spin(node)
-    except (KeyboardInterrupt, Exception, BaseException):
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+    run_node(NeighborSensorNode, args)
 
 
 if __name__ == '__main__':

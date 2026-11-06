@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,12 +24,12 @@ from typing import Dict, List, Optional, Tuple
 
 from geometry_msgs.msg import Pose, PoseStamped, Twist, Vector3
 from nav_msgs.msg import Odometry
-import rclpy
 from rclpy.node import Node
 from swarm_interfaces.msg import NeighborList
 
 from .kinematics import wrap_angle
 from .localization import compute_estimation_error, RobotEKF
+from .node_runner import run_node
 
 
 class LocalizationNode(Node):
@@ -293,22 +293,7 @@ class LocalizationNode(Node):
 
 def main(args: Optional[List[str]] = None) -> None:
     """Entry point for LocalizationNode."""
-    rclpy.init(args=args)
-    node = LocalizationNode()
-    try:
-        rclpy.spin(node)
-    except (KeyboardInterrupt, Exception, BaseException):
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+    run_node(LocalizationNode, args)
 
 
 if __name__ == '__main__':

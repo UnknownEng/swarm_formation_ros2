@@ -15,14 +15,19 @@ echo "========================================================================"
 echo "Workspace Directory: ${SCRIPT_DIR}"
 echo "Start Time: $(date -u)"
 
-# Cleanup trap for simulation processes
+# Cleanup: stop only the process group started by this script (Gazebo, bridge and
+# swarm nodes launched below), never unrelated ros2/gz/ruby processes on the machine.
+LAUNCH_PGID=""
 cleanup() {
-    echo ""
-    echo ">> [CLEANUP] Ensuring all simulation processes are terminated..."
-    killall -9 gz sim 2>/dev/null || true
-    killall -9 parameter_bridge 2>/dev/null || true
-    killall -9 ruby 2>/dev/null || true
-    killall -9 ros2 2>/dev/null || true
+    local own_pgid
+    own_pgid=$(ps -o pgid= -p $$ | tr -d ' ')
+    if [ -n "${LAUNCH_PGID}" ] && [ "${LAUNCH_PGID}" != "${own_pgid}" ]         && kill -0 -- "-${LAUNCH_PGID}" 2>/dev/null; then
+        echo ""
+        echo ">> [CLEANUP] Stopping simulation process group ${LAUNCH_PGID}..."
+        kill -TERM -- "-${LAUNCH_PGID}" 2>/dev/null || true
+        sleep 3
+        kill -KILL -- "-${LAUNCH_PGID}" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT INT TERM
 
@@ -59,7 +64,9 @@ mkdir -p "${REPRO_DIR}" "${CAMPAIGN_DIR}" "${PLOTS_DIR}"
 
 # Step 4: Headless Physics Simulation in Gazebo Harmonic with Rosbag Recording
 echo ">> [STEP 4/6] Launching 5-robot physics simulation in Gazebo Harmonic (35s duration)..."
-timeout 90 ros2 launch swarm_formation gazebo_swarm_launch.py \
+LAUNCH_LOG="${REPRO_DIR}/gazebo_launch.log"
+# setsid gives the launch its own process group so cleanup can stop exactly it
+setsid timeout 90 ros2 launch swarm_formation gazebo_swarm_launch.py \
     headless:=true \
     sim_duration:=35.0 \
     enable_faults:=true \
@@ -68,10 +75,33 @@ timeout 90 ros2 launch swarm_formation gazebo_swarm_launch.py \
     controller_type:=displacement \
     record_bag:=true \
     bag_path:="${GAZEBO_BAG_DIR}" \
-    csv_path:="${REPRO_DIR}/repro_metrics.csv" || true
+    csv_path:="${REPRO_DIR}/repro_metrics.csv" > "${LAUNCH_LOG}" 2>&1 &
+LAUNCH_PID=$!
+# Without job control the background child is not a group leader, so setsid runs
+# in-process and the new process group id equals the child's pid.
+LAUNCH_PGID="${LAUNCH_PID}"
+LAUNCH_STATUS=0
+wait "${LAUNCH_PID}" || LAUNCH_STATUS=$?
+LAUNCH_PGID_DONE="${LAUNCH_PGID}"
+cleanup
+LAUNCH_PGID=""
 
 # Wait 2 seconds for buffers to sync
 sleep 2
+
+# Fail loudly: a crashed node, a timeout, or missing outputs invalidate the run
+if [ "${LAUNCH_STATUS}" -ne 0 ]; then
+    echo "ERROR: Gazebo launch exited with status ${LAUNCH_STATUS} (124 = timeout). See ${LAUNCH_LOG}" >&2
+    exit 1
+fi
+if grep -q "Unhandled exception" "${LAUNCH_LOG}"; then
+    echo "ERROR: a swarm node crashed during the Gazebo run (pgid ${LAUNCH_PGID_DONE}). See ${LAUNCH_LOG}" >&2
+    exit 1
+fi
+if [ ! -s "${REPRO_DIR}/repro_metrics.csv" ]; then
+    echo "ERROR: Gazebo run produced no metrics CSV. See ${LAUNCH_LOG}" >&2
+    exit 1
+fi
 
 # Step 5: Process Rosbag & Generate Trajectory Plots
 echo ">> [STEP 5/6] Processing recorded rosbag and generating publication plots..."
@@ -84,7 +114,8 @@ if [ -d "${GAZEBO_BAG_DIR}" ]; then
         --input-bag "${GAZEBO_BAG_DIR}" \
         --output-dir "${PLOTS_DIR}/gazebo"
 else
-    echo "WARNING: Gazebo rosbag was not recorded (headless environment display issue). Proceeding with statistical campaign."
+    echo "ERROR: Gazebo rosbag was not recorded at ${GAZEBO_BAG_DIR}. See ${LAUNCH_LOG}" >&2
+    exit 1
 fi
 
 # Step 6: Execute Statistical Campaign & Generate All 4 Main Figures
@@ -101,7 +132,7 @@ timeout 60 ros2 run swarm_formation plot_campaign \
 
 echo ""
 echo "========================================================================"
-echo "    REPRODUCTION PIPELINE COMPLETE - ALL ARTIFACTS VERIFIED"
+echo "    REPRODUCTION PIPELINE COMPLETE"
 echo "========================================================================"
 echo "Artifact Directory: ${REPRO_DIR}"
 echo "Campaign Results JSON: ${CAMPAIGN_DIR}/campaign_results.json"

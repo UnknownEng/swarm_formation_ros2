@@ -26,9 +26,10 @@ stack so that statistical claims about that stack are meaningful:
   is republished every step until it is older than ``stale_purge_sec``;
 * localization_node: a real ``RobotEKF`` per robot, driven by noisy odometry, an
   odometry-integrated heading, known landmark beacons and peer range/bearing;
-* robot_node: body-frame measurements rotated with the *current* estimated yaw at
-  reception, finite-difference relative velocities, optional heartbeat masking, EMA
-  filtering, Huber saturation and APF, then mapped to (v, w);
+* robot_node: body-frame measurements rotated with the estimated yaw at *measurement*
+  time, only currently delivered peers kept, finite-difference velocities between
+  distinct measurements, heartbeat on measurement age, EMA filtering, Huber saturation
+  and APF, then mapped to (v, w) (shared code in relative_sensing.py);
 * safety_filter_node: the look-ahead CBF-QP on the impaired neighbor list.
 
 Landmark beacons are the obstacle centres of ``collapsed_building.sdf``; they are used
@@ -51,6 +52,7 @@ from swarm_formation.potential_field import (
     compute_peer_safety_scale,
     compute_relative_peer_apf,
 )
+from swarm_formation.relative_sensing import compute_heartbeat_mask, update_relative_store
 
 # Obstacle centres of collapsed_building.sdf, used as known localization beacons.
 LANDMARKS: List[Tuple[float, float]] = [
@@ -171,11 +173,6 @@ def generate_initial_states(
     return states
 
 
-def _body_to_reference(rel_x: float, rel_y: float, yaw: float) -> Tuple[float, float]:
-    c, s = math.cos(yaw), math.sin(yaw)
-    return rel_x * c - rel_y * s, rel_x * s + rel_y * c
-
-
 def run_single_simulation(
     config: CampaignRunConfig,
     seed: int,
@@ -209,15 +206,17 @@ def run_single_simulation(
         i: compute_target_offsets(i, n, config.formation_radius) for i in range(1, n + 1)
     }
 
-    # Channel state. Packet: (deliver_time, src_j, range, bearing)
-    in_flight: List[List[Tuple[float, int, float, float]]] = [[] for _ in range(n)]
-    delivered: List[Dict[int, Tuple[float, float, float]]] = [{} for _ in range(n)]
+    # Channel state. Packet: (deliver_time, src_j, range, bearing, measurement_time)
+    in_flight: List[List[Tuple[float, int, float, float, float]]] = [[] for _ in range(n)]
+    delivered: List[Dict[int, Tuple[float, float, float, float]]] = [{} for _ in range(n)]
+    # Estimated heading per control step (robot_node / safety_filter_node YawHistory)
+    est_yaw_hist: List[List[float]] = [[] for _ in range(n)]
     packets_sent = 0
     packets_dropped = 0
     latency_sum = 0.0
     latency_count = 0
 
-    # robot_node state (per observer): pid -> (dx, dy, vx, vy, last_seen)
+    # robot_node state (per observer): pid -> (dx, dy, vx, vy, measurement_time)
     rel_store: List[Dict[int, Tuple[float, float, float, float, float]]] = [
         {} for _ in range(n)
     ]
@@ -296,7 +295,7 @@ def run_single_simulation(
                     latency = max(0.0, latency + jitter)
                 latency_sum += latency
                 latency_count += 1
-                in_flight[i].append((t + latency, j + 1, dist, bearing))
+                in_flight[i].append((t + latency, j + 1, dist, bearing, t))
 
         # Deliver matured packets (in arrival order; reordering under jitter is kept)
         for i in range(n):
@@ -309,8 +308,8 @@ def run_single_simulation(
                     remaining.append(pkt)
             in_flight[i] = remaining
             matured.sort(key=lambda p: p[0])
-            for deliv_t, src, rng_m, brg_m in matured:
-                delivered[i][src] = (rng_m, brg_m, deliv_t)
+            for deliv_t, src, rng_m, brg_m, t_meas in matured:
+                delivered[i][src] = (rng_m, brg_m, deliv_t, t_meas)
                 # localization_node: cooperative update with the peer's current estimate
                 px, py, _ = ekfs[src - 1].get_pose()
                 ekfs[i].update_range_bearing(
@@ -349,30 +348,30 @@ def run_single_simulation(
                 continue
 
             _, _, est_yaw = ekfs[i].get_pose()
+            est_yaw_hist[i].append(est_yaw)
+            hist = est_yaw_hist[i]
 
-            # Impaired NeighborList republished this step (stale entries purged)
-            current_list: Dict[int, Tuple[float, float]] = {}
-            for src, (rng_m, brg_m, deliv_t) in delivered[i].items():
+            def yaw_at(t_meas: float, hist: List[float] = hist) -> float:
+                return hist[min(len(hist) - 1, max(0, int(round(t_meas / dt))))]
+
+            # Impaired NeighborList republished this step (stale entries purged by the
+            # network node on delivery age), handled exactly as robot_node does.
+            measurements = []
+            for src, (rng_m, brg_m, deliv_t, t_meas) in delivered[i].items():
                 if t - deliv_t <= config.stale_purge_sec:
-                    rel_bx = rng_m * math.cos(brg_m)
-                    rel_by = rng_m * math.sin(brg_m)
-                    current_list[src] = _body_to_reference(rel_bx, rel_by, est_yaw)
+                    measurements.append(
+                        (src, rng_m * math.cos(brg_m), rng_m * math.sin(brg_m), t_meas)
+                    )
+            rel_store[i] = update_relative_store(rel_store[i], measurements, yaw_at)
+            current_list = {pid: (e[0], e[1]) for pid, e in rel_store[i].items()}
 
-            # robot_node.neighbor_callback: store with finite-difference velocity
-            for src, (dx, dy) in current_list.items():
-                vx, vy = 0.0, 0.0
-                if src in rel_store[i]:
-                    pdx, pdy, _, _, pt = rel_store[i][src]
-                    gap = max(t - pt, 1e-4)
-                    vx, vy = (dx - pdx) / gap, (dy - pdy) / gap
-                rel_store[i][src] = (dx, dy, vx, vy, t)
-
-            active_mask: Optional[Dict[int, bool]] = None
+            other_ids = [pid for pid in range(1, n + 1) if pid != robot_id]
             if config.use_heartbeat:
-                active_mask = {
-                    pid: (t - entry[4]) <= config.heartbeat_timeout
-                    for pid, entry in rel_store[i].items()
-                }
+                active_mask: Dict[int, bool] = compute_heartbeat_mask(
+                    rel_store[i], other_ids, t, config.heartbeat_timeout
+                )
+            else:
+                active_mask = {pid: pid in rel_store[i] for pid in other_ids}
 
             # Optional EMA with jump rejection (robot_node._compute_resilient_control)
             if config.use_ema:
@@ -404,9 +403,9 @@ def run_single_simulation(
             )
 
             if config.use_apf:
-                apf_peers = peer_states
-                if active_mask is not None:
-                    apf_peers = {p: s for p, s in peer_states.items() if active_mask.get(p, True)}
+                apf_peers = {
+                    p: st for p, st in peer_states.items() if active_mask.get(p, False)
+                }
                 fx_apf, fy_apf, min_peer = compute_relative_peer_apf(apf_peers)
                 scale = compute_peer_safety_scale(min_peer)
                 fx = fx * scale + fx_apf

@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -311,8 +311,8 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         bag_out = bag_path_arg if bag_path_arg else f'bags/swarm_bag_{int(time.time())}'
         topics_to_record = [
             '/clock',
-            '/swarm/network_status',
-            '/swarm/fault_status',
+            '/network/status',
+            '/swarm/visualization',
         ]
         for i in range(1, total_robots + 1):
             topics_to_record.extend([
@@ -324,7 +324,9 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
                 f'/robot_{i}/estimation_error',
                 f'/robot_{i}/safety_intervention',
                 f'/robot_{i}/neighbors',
-                f'/robot_{i}/obstacles',
+                f'/robot_{i}/neighbors_raw',
+                f'/robot_{i}/motor_kill',
+                f'/robot_{i}/sensor_fault',
             ])
         bag_cmd = [
             'ros2', 'bag', 'record',

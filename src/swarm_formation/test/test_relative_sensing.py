@@ -1,4 +1,4 @@
-# Copyright 2026 Open Source Robotics Foundation, Inc.
+# Copyright 2026 Mansoor Ahmed Rind
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,13 @@ import math
 import random
 
 from swarm_formation.relative_sensing import (
+    compute_heartbeat_mask,
     compute_relative_bearing,
     compute_relative_measurement,
     compute_relative_obstacle,
     transform_body_to_reference,
+    update_relative_store,
+    YawHistory,
 )
 
 
@@ -149,3 +152,48 @@ def test_transform_body_to_reference() -> None:
     dx2, dy2 = transform_body_to_reference(0.0, 1.0, math.pi / 2.0)
     assert abs(dx2 - (-1.0)) < 1e-6
     assert abs(dy2) < 1e-6
+
+
+def test_yaw_history_interpolates_and_wraps() -> None:
+    """Heading lookup interpolates between samples, including across +/- pi."""
+    hist = YawHistory()
+    assert hist.lookup(1.0) is None
+    hist.add(0.0, 0.0)
+    hist.add(1.0, 1.0)
+    assert math.isclose(hist.lookup(0.5), 0.5, abs_tol=1e-9)
+    assert math.isclose(hist.lookup(-5.0), 0.0, abs_tol=1e-9)
+    assert math.isclose(hist.lookup(9.0), 1.0, abs_tol=1e-9)
+    wrap = YawHistory()
+    wrap.add(0.0, math.pi - 0.1)
+    wrap.add(1.0, -math.pi + 0.1)
+    assert abs(abs(wrap.lookup(0.5)) - math.pi) < 1e-9
+
+
+def test_delayed_measurement_uses_heading_at_measurement_time() -> None:
+    """A peer straight ahead when measured stays at the same world bearing after turning."""
+    hist = YawHistory()
+    hist.add(0.0, 0.0)          # facing +x when the measurement is taken
+    hist.add(0.2, math.pi / 2)  # turned 90 deg by the time it is delivered
+    store = update_relative_store({}, [(2, 1.0, 0.0, 0.0)], hist.lookup)
+    dx, dy = store[2][0], store[2][1]
+    assert math.isclose(dx, 1.0, abs_tol=1e-9) and math.isclose(dy, 0.0, abs_tol=1e-9)
+
+
+def test_relative_store_drops_absent_peers_and_keeps_velocity_on_republish() -> None:
+    """Peers missing from the list are removed; re-published data keeps its velocity."""
+    def yaw_zero(_: float) -> float:
+        return 0.0
+
+    store = update_relative_store({}, [(2, 1.0, 0.0, 0.0), (3, 2.0, 0.0, 0.0)], yaw_zero)
+    store = update_relative_store(store, [(2, 1.1, 0.0, 0.1)], yaw_zero)
+    assert set(store) == {2}
+    assert math.isclose(store[2][2], 1.0, abs_tol=1e-9)  # 0.1 m in 0.1 s
+    store = update_relative_store(store, [(2, 1.1, 0.0, 0.1)], yaw_zero)
+    assert math.isclose(store[2][2], 1.0, abs_tol=1e-9)  # same stamp: velocity kept
+
+
+def test_heartbeat_mask_uses_measurement_age() -> None:
+    """A re-published but old measurement times out; absent peers are inactive."""
+    store = {2: (1.0, 0.0, 0.0, 0.0, 10.0), 3: (1.0, 1.0, 0.0, 0.0, 8.6)}
+    mask = compute_heartbeat_mask(store, [2, 3, 4], now=10.0, timeout=1.2)
+    assert mask == {2: True, 3: False, 4: False}

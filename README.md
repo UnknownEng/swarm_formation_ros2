@@ -4,7 +4,7 @@
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic_8.x-orange.svg)](https://gazebosim.org/docs/harmonic)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420.svg)](https://ubuntu.com/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](LICENSE)
-[![Regression Suite](https://img.shields.io/badge/Tests-92%2F92%20Passing%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-107%20(pytest)-blue.svg)](src/swarm_formation/test)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](Dockerfile)
 
 > **Author**: Mansoor Ahmed Rind  
@@ -22,17 +22,21 @@ A swarm of **5 nonholonomic differential-drive mobile robots** autonomously self
 > **Validation status (2026-11-07):** the statistical results in Section 6 come from a headless kinematic simulator that mirrors the ROS node pipeline. The look-ahead CBF and deadlock fix have **not yet been re-run in Gazebo**. Every committed Gazebo run that used the old safety layer ended without reaching the formation (`results/M6`, `results/M7`, `results/re_eval`).
 
 ```
-                  Robot 1 (Top Vertex)
-                       (0.0, 2.0)
-                           ▲
-                          / \
-                         /   \
-                        /     \
-    Robot 5 (-1.9, 0.62)       Robot 2 (1.9, 0.62)
-              \                 /
-               \               /
-                \             /
-    Robot 4 (-1.18, -1.62)───Robot 3 (1.18, -1.62)
+                Robot 2 (0.62, 1.90)
+                   *
+                 /    \
+Robot 3        /        \
+(-1.62, 1.18) *          \
+              |           * Robot 1 (2.00, 0.00)
+(-1.62,-1.18) *          /
+Robot 4        \        /
+                 \    /
+                   *
+                Robot 5 (0.62, -1.90)
+
+Target slot of robot k: angle 72 deg * (k - 1), counter-clockwise from +x
+(see consensus.compute_target_offsets). Only relative offsets are controlled,
+so the whole pentagon may be translated.
 ```
 
 ### Key Engineering & Scientific Capabilities:
@@ -43,7 +47,7 @@ A swarm of **5 nonholonomic differential-drive mobile robots** autonomously self
    - **Bearing-based consensus** with orthogonal projection nullspace operators (Zhao & Zelazo 2016).
 3. **Cooperative EKF Localization Law**: An onboard Extended Kalman Filter fuses wheel odometry and relative neighbor measurements to estimate local ego-pose. Ground truth is strictly isolated for offline metric evaluation.
 4. **Active Safety Layer (CBF-QP)**: A standalone look-ahead Control Barrier Function QP filter (exact 2D solver, exact unicycle mapping, right-hand deadlock breaking). In the kinematic campaign it kept every run collision-free ($d_{\min} \ge 0.50\,\text{m}$) **while still reaching the formation in 100% of clean-channel runs** (see Section 6).
-5. **Delay-Compensated Safety**: Barrier expansion $D_s^{\text{eff}} = D_s + \ell + 2 v_{\max} \tau_{\max}$. With latency actually applied to every peer measurement, all runs stayed collision-free up to 200 ms, but formation accuracy only holds to about 100 ms (at 200 ms, 32% of runs reach the formation).
+5. **Delay-Compensated Safety**: Barrier expansion $D_s^{\text{eff}} = D_s + \ell + 2 v_{\max} \tau_{\max}$. With latency actually applied to every peer measurement, all runs stayed collision-free up to 200 ms, but formation accuracy only holds to about 100 ms (at 200 ms, 36% of runs reach the formation).
 6. **Decoupled Network Impairments & Fault Injection**: Standalone nodes simulate Bernoulli packet loss, stochastic delay queues, sensor bias, and agent dropouts, with runtime ROS 2 service toggles.
 7. **Offline Rosbag-Driven Analytics**: Rosbag recording (`ros2 bag`), offline Procrustes metric extraction (`process_bag`), and publication plot generation (`plot_bag`).
 8. **Statistical Rigor & One-Command Replication**: 400-run kinematic campaign (25 seeds $\times$ 16 conditions, leave-one-out ablation, applied packet-drop and latency sweeps) with Student's $t$ 95% Confidence Intervals, reproducible via `./reproduce_all.sh`. The campaign uses a headless unicycle simulator that mirrors the ROS node pipeline; it is not a physics simulation.
@@ -58,47 +62,48 @@ The software architecture is modularized into decoupled ROS 2 nodes and pure Pyt
 
 ```mermaid
 flowchart TD
-    subgraph Physics_Simulation ["Physics & Hardware Layer (Gazebo Harmonic / Real Unicycle)"]
-        GZ["Gazebo Harmonic Physics Engine"]
-        WHEEL["Wheel Encoders & Lidar Scan"]
+    subgraph Physics_Simulation ["Simulation Layer (Gazebo Harmonic)"]
+        GZ["Gazebo Harmonic + DiffDrive plugin"]
     end
 
     subgraph Perception_Layer ["Perception & Estimation Layer"]
-        SENS["neighbor_sensor_node\n(Relative Polar Sensing, R_sense = 6.0m)"]
-        EKF["localization_node\n(Cooperative EKF State Estimator)"]
+        SENS["neighbor_sensor_node\n(simulated range/bearing from Gazebo poses,\nR_sense = 6.0m, timestamped)"]
+        EKF["localization_node\n(Cooperative EKF: odometry, landmarks, peers)"]
     end
 
     subgraph Network_Fault_Layer ["Network & Fault Simulation Layer"]
-        NET["network_impairment_node\n(Packet Loss, Delays, ToggleLink.srv)"]
-        FAULT["fault_injector_node\n(Sensor Bias, Agent Kill, TriggerFault.srv)"]
+        NET["network_impairment_node\n(drop, delay, jitter on peer measurements)"]
+        FAULT["fault_injector_node\n(sensor bias/blackout, motor kill)"]
     end
 
     subgraph Formation_Control_Layer ["Decentralized Formation Layer"]
-        CTRL["robot_node\n(Displacement / Distance / Bearing Controller)"]
+        CTRL["robot_node\n(formation controller, optional Huber/EMA/heartbeat/APF)"]
     end
 
     subgraph Safety_Filter_Layer ["Active Safety Filter Layer"]
-        CBF["safety_filter_node\n(2D Active-Set CBF-QP Solver)"]
+        CBF["safety_filter_node\n(look-ahead CBF-QP)"]
     end
 
-    subgraph Evaluation_Layer ["Offline Analytics & Verification"]
-        BAG["ros2 bag record\n(Raw Message Serialization)"]
-        PROC["rosbag_processor (process_bag)\n(Procrustes Alignment, d_min, Energy)"]
-        PLOT["plot_generator (plot_bag)\n(Publication-Grade Trajectory Figures)"]
+    subgraph Evaluation_Layer ["Offline Analytics"]
+        BAG["ros2 bag record"]
+        PROC["rosbag_processor (process_bag)"]
+        PLOT["plot_generator (plot_bag)"]
     end
 
+    GZ -->|/robot_i/pose: sensor simulation + evaluation only| SENS
     GZ -->|/robot_i/odom| EKF
-    GZ -->|/robot_i/pose (Evaluation Only)| BAG
-    GZ -->|/robot_i/scan| CBF
-    WHEEL --> SENS
-    SENS -->|/robot_i/relative_neighbors| EKF
-    SENS -->|/robot_i/relative_neighbors| CBF
-    EKF -->|/robot_i/estimated_pose| NET
+    SENS -->|/robot_i/neighbors_raw| NET
+    NET -->|/robot_i/neighbors| EKF
     NET -->|/robot_i/neighbors| CTRL
-    FAULT -.->|Injects Delays / Drops / Bias| NET
+    NET -->|/robot_i/neighbors| CBF
+    EKF -->|/robot_i/estimated_pose: heading| CTRL
+    EKF -->|/robot_i/estimated_pose: heading| CBF
+    FAULT -.->|/robot_i/sensor_fault| SENS
+    FAULT -.->|/robot_i/motor_kill| CTRL
     CTRL -->|/robot_i/cmd_vel_raw| CBF
-    CBF -->|/robot_i/cmd_vel (Certified Safe)| GZ
-    CBF -->|/robot_i/cmd_vel| BAG
+    CBF -->|/robot_i/cmd_vel| GZ
+    GZ -.->|/robot_i/pose| BAG
+    CBF -.->|/robot_i/cmd_vel| BAG
     BAG --> PROC
     PROC --> PLOT
 ```
@@ -213,27 +218,32 @@ Headless kinematic simulator (`campaign_simulator.py`) that mirrors the ROS node
 | APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
 | CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
 | Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
-| Full stack, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
-| Full stack without Huber, impaired | 100% | 0.255 [0.228, 0.282] | 1.116 / 0.975 | 100% | 55.9 | 0.025 |
-| Full stack without EMA, impaired | 100% | 0.226 [0.197, 0.255] | 1.036 / 0.938 | 100% | 51.3 | 0.023 |
-| Full stack without heartbeat, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
-| CBF only (no resilience), impaired | 100% | 0.211 [0.188, 0.234] | 1.110 / 0.928 | 100% | 50.8 | 0.023 |
-| Full stack, 15% drop | 100% | 0.053 [0.047, 0.060] | 0.765 / 0.660 | 100% | 37.7 | 0.005 |
-| Full stack, 30% drop | 100% | 0.099 [0.086, 0.113] | 0.766 / 0.644 | 100% | 49.3 | 0.005 |
-| Full stack, 50% drop | 100% | 0.214 [0.184, 0.244] | 0.759 / 0.614 | 100% | 64.0 | 0.006 |
-| Full stack, 50 ms delay (matched margin) | 100% | 0.162 [0.144, 0.180] | 0.873 / 0.820 | 100% | 47.6 | 0.013 |
-| Full stack, 100 ms delay (matched margin) | 100% | 0.222 [0.194, 0.250] | 0.976 / 0.912 | 100% | 55.1 | 0.023 |
-| Full stack, 200 ms delay (matched margin) | 32% | 0.287 [0.265, 0.310] | 1.208 / 1.158 | 100% | 53.5 | 0.039 |
-| Full stack, 200 ms delay (fixed 50 ms margin) | 8% | 0.318 [0.299, 0.336] | 0.870 / 0.802 | 100% | 57.5 | 0.042 |
+| Full stack, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
+| Full stack without Huber, impaired | 100% | 0.193 [0.178, 0.209] | 1.065 / 0.934 | 100% | 74.2 | 0.046 |
+| Full stack without EMA, impaired | 100% | 0.104 [0.094, 0.114] | 1.081 / 0.937 | 100% | 49.0 | 0.025 |
+| Full stack without heartbeat, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
+| CBF only (no resilience), impaired | 100% | 0.108 [0.099, 0.116] | 1.064 / 0.966 | 100% | 48.5 | 0.026 |
+| Full stack, 15% drop | 100% | 0.010 [0.008, 0.012] | 0.767 / 0.691 | 100% | 27.0 | 0.004 |
+| Full stack, 30% drop | 100% | 0.010 [0.009, 0.012] | 0.759 / 0.648 | 100% | 27.7 | 0.005 |
+| Full stack, 50% drop | 100% | 0.011 [0.009, 0.013] | 0.731 / 0.576 | 100% | 30.5 | 0.005 |
+| Full stack, 50 ms delay (matched margin) | 100% | 0.067 [0.056, 0.078] | 0.883 / 0.810 | 100% | 43.5 | 0.014 |
+| Full stack, 100 ms delay (matched margin) | 100% | 0.152 [0.133, 0.171] | 1.013 / 0.865 | 100% | 65.8 | 0.029 |
+| Full stack, 200 ms delay (matched margin) | 36% | 0.309 [0.289, 0.329] | 1.272 / 1.172 | 100% | 89.9 | 0.054 |
+| Full stack, 200 ms delay (fixed 50 ms margin) | 4% | 0.352 [0.329, 0.374] | 0.825 / 0.711 | 100% | 99.0 | 0.070 |
+
+*Results regenerated on 2026-11-07 after the Phase A fixes. Measurements now carry their measurement time, are rotated with the heading at that time, take relative velocity only from distinct measurements, and are dropped once no longer delivered.*
 
 **What the data supports:**
-- **Safety:** every CBF and APF run, in all 15 conditions with avoidance, stayed above the 0.50 m collision limit. The worst case was 0.614 m (full stack, 50% drop). Without avoidance, every run collided.
+- **Safety:** every run in all 15 conditions with avoidance stayed above the 0.50 m collision limit. The worst case was 0.576 m (full stack, 50% drop). Without avoidance, every run collided.
 - **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
 - **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
-- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.802 m). Formation accuracy does not: at 200 ms, only 32% of runs reach the formation (8% with the fixed margin). The stack works to about 100 ms of delay.
-- **Packet loss:** the formation still forms at 50% drop, but final error rises from 0.009 m to 0.214 m.
-- **Resilience components:** under nominal impairment none of them measurably helps. CBF without Huber, EMA or heartbeat does as well (0.211 m vs 0.220 m, overlapping CIs). Removing the heartbeat changes nothing at all: the network node keeps republishing a stale measurement for 1.5 s, longer than the 1.2 s heartbeat timeout, so the timeout never fires. The same is true in the ROS nodes.
-- **Under impairment**, final shape error (about 0.22 m) sits close to the 0.25 m threshold, so "reached formation" there means the robots touched the threshold, not that they settled well inside it.
+- **Packet loss:** the formation forms precisely even at 50% drop (final error 0.011 m).
+- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.711 m). Formation accuracy degrades with delay: 0.067 m at 50 ms and 0.152 m at 100 ms. At 200 ms only 36% of runs reach the formation (4% with the fixed margin). The stack works to about 100 ms of delay.
+- **Resilience components, under nominal impairment:**
+  - **EMA hurts.** Removing it halves the final error (0.202 m → 0.104 m) and the path length (74.8 m → 49.0 m), because its lag adds to the network delay.
+  - **Huber is neutral** (0.193 m without it, overlapping CIs).
+  - **The heartbeat now works** (it uses measurement age, and is unit-tested), but it changes nothing here, because no peer is silent for more than 1.2 s in these conditions. A robot-loss scenario is needed to evaluate it.
+  - **CBF with no resilience component** (0.108 m) does as well as any combination.
 
 ### Campaign Figures
 Generated from `campaign_results.json` into `results/M8/plots/`:
@@ -262,7 +272,7 @@ colcon build --symlink-install
 # Source overlay
 source install/setup.bash
 
-# Run full test suite (92/92 passing)
+# Run full test suite (107 tests; 7 files need a sourced ROS 2 environment)
 colcon test --packages-select swarm_formation && colcon test-result --verbose
 ```
 
@@ -358,7 +368,7 @@ To run the end-to-end pipeline (build, test, simulation, bag processing, 325-run
         │   ├── campaign_visualizer.py # Publication figure generator
         │   ├── rosbag_processor.py    # Offline bag metrics extractor
         │   └── plot_generator.py      # Bag trajectory plot generator
-        ├── test/                      # 92 unit and acceptance tests
+        ├── test/                      # 107 unit and acceptance tests
         └── worlds/
             └── collapsed_building.sdf # Gazebo Harmonic disaster arena
 ```
