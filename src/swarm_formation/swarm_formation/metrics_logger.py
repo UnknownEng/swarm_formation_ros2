@@ -19,7 +19,7 @@ import math
 import os
 from typing import Dict, Optional, Tuple
 
-from geometry_msgs.msg import Point, Pose
+from geometry_msgs.msg import Point, Pose, Vector3
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import ColorRGBA
@@ -72,6 +72,8 @@ class SwarmMetricsLogger(Node):
 
         # Publishers & Subscribers (Subscribes to Gazebo ground truth for evaluation only)
         self.pose_subs = []
+        self.est_error_subs = []
+        self.robot_est_errors: Dict[int, float] = {}
         for i in range(1, self.total_robots + 1):
             sub = self.create_subscription(
                 Pose,
@@ -80,6 +82,14 @@ class SwarmMetricsLogger(Node):
                 20,
             )
             self.pose_subs.append(sub)
+
+            sub_err = self.create_subscription(
+                Vector3,
+                f'/robot_{i}/estimation_error',
+                lambda msg, r_id=i: self._est_error_callback(msg, r_id),
+                20,
+            )
+            self.est_error_subs.append(sub_err)
         self.pub_markers = self.create_publisher(MarkerArray, '/swarm/visualization', 10)
 
         self.timer = self.create_timer(self.dt, self.metrics_loop)
@@ -102,6 +112,7 @@ class SwarmMetricsLogger(Node):
             'collisions_count',
             'is_converged',
             'convergence_time',
+            'mean_est_error',
         ]
         for i in range(1, self.total_robots + 1):
             header.extend([f'r{i}_x', f'r{i}_y'])
@@ -116,6 +127,10 @@ class SwarmMetricsLogger(Node):
         py = msg.position.y
         curr_time = self.get_clock().now().nanoseconds * 1e-9
         self.robot_poses[robot_id] = (px, py, curr_time)
+
+    def _est_error_callback(self, msg: Vector3, robot_id: int) -> None:
+        """Update robot localization estimation error for evaluation logging."""
+        self.robot_est_errors[robot_id] = msg.x
 
     def _compute_metrics(
         self,
@@ -216,6 +231,11 @@ class SwarmMetricsLogger(Node):
 
         # Log row to CSV
         conv_val = f'{self.convergence_time:.3f}' if self.convergence_time is not None else 'NaN'
+        mean_est_val = (
+            f'{sum(self.robot_est_errors.values()) / len(self.robot_est_errors):.4f}'
+            if self.robot_est_errors
+            else '0.0000'
+        )
         row = [
             f'{elapsed:.2f}',
             f'{shape_error:.4f}',
@@ -224,6 +244,7 @@ class SwarmMetricsLogger(Node):
             str(collisions),
             str(self.is_converged),
             conv_val,
+            mean_est_val,
         ]
         for i in range(1, self.total_robots + 1):
             rx, ry, _ = self.robot_poses[i]
@@ -242,6 +263,7 @@ class SwarmMetricsLogger(Node):
             self.get_logger().info(
                 f'[t={elapsed:5.1f}s] Shape Err: {shape_error:6.3f}m | '
                 f'Min Dist: {min_dist:5.3f}m (Global: {self.global_min_distance:5.3f}m) | '
+                f'Est Err: {mean_est_val}m | '
                 f'Collisions: {self.total_collision_events} | Converged: {conv_str}'
             )
 
@@ -333,6 +355,12 @@ class SwarmMetricsLogger(Node):
             else 'FAILED TO CONVERGE within timeout'
         )
 
+        mean_est_val = (
+            f'{sum(self.robot_est_errors.values()) / len(self.robot_est_errors):.4f}'
+            if self.robot_est_errors
+            else '0.0000'
+        )
+
         summary = (
             '\n======================================================================\n'
             f'           SWARM FORMATION EXPERIMENT SUMMARY REPORT\n'
@@ -342,6 +370,7 @@ class SwarmMetricsLogger(Node):
             f' Final Shape Error:   {self.last_shape_error:.4f} m (RMS)\n'
             f' Convergence Status:  {conv_str}\n'
             f' Global Min Distance: {self.global_min_distance:.4f} m (Safety Limit: 0.50 m)\n'
+            f' Mean Est Error:      {mean_est_val} m\n'
             f' Total Collisions:    {self.total_collision_events} crash events detected\n'
             f' Metrics Saved:       {self.csv_path}\n'
             '======================================================================\n'

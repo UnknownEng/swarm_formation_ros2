@@ -157,11 +157,15 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         )
         actions.append(spawner)
 
-        # Bridge definitions for cmd_vel and pose
+        # Bridge definitions for cmd_vel, pose, and odometry
         bridge_args.append(f'/model/robot_{i}/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist')
         bridge_args.append(f'/model/robot_{i}/pose@geometry_msgs/msg/Pose[gz.msgs.Pose')
+        bridge_args.append(
+            f'/model/robot_{i}/odometry@nav_msgs/msg/Odometry[gz.msgs.OdometryWithCovariance'
+        )
         bridge_remappings.append((f'/model/robot_{i}/cmd_vel', f'/robot_{i}/cmd_vel'))
         bridge_remappings.append((f'/model/robot_{i}/pose', f'/robot_{i}/pose'))
+        bridge_remappings.append((f'/model/robot_{i}/odometry', f'/robot_{i}/odom'))
 
         # Parameters list: load YAML params first, then apply overrides
         node_params = []
@@ -186,6 +190,24 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             parameters=node_params,
         )
         actions.append(sensor_node)
+
+        # Onboard Cooperative EKF Localization Node (M5)
+        loc_params = list(node_params)
+        loc_params.append({
+            'initial_x': init_x,
+            'initial_y': init_y,
+            'initial_yaw': 0.0,
+            'publish_rate': 50.0,
+            'use_landmarks': True,
+        })
+        localization_node = Node(
+            package='swarm_formation',
+            executable='localization_node',
+            name=f'localization_node_{i}',
+            output='screen',
+            parameters=loc_params,
+        )
+        actions.append(localization_node)
 
         # Gazebo Swarm Controller Node
         controller_node = Node(

@@ -17,7 +17,7 @@
 import math
 from typing import Dict, List, Optional, Tuple
 
-from geometry_msgs.msg import Pose, Twist
+from geometry_msgs.msg import PoseStamped, Twist
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
@@ -144,9 +144,12 @@ class GazeboSwarmNode(Node):
         self.sub_neighbors = self.create_subscription(
             NeighborList, f'/robot_{self.robot_id}/neighbors', self.neighbor_callback, 10
         )
-        # Orientation emulation from onboard IMU / compass
-        self.sub_pose = self.create_subscription(
-            Pose, f'/robot_{self.robot_id}/pose', self.pose_callback, 10
+        # Estimated pose from onboard localization node (never reads ground truth)
+        self.sub_estimated_pose = self.create_subscription(
+            PoseStamped,
+            f'/robot_{self.robot_id}/estimated_pose',
+            self._estimated_pose_callback,
+            10,
         )
 
         self.timer = self.create_timer(self.dt, self.control_loop)
@@ -155,16 +158,16 @@ class GazeboSwarmNode(Node):
             f'Relative Sensing: Active | Resilient: {self.use_resilient_method}'
         )
 
-    def pose_callback(self, msg: Pose) -> None:
+    def _estimated_pose_callback(self, msg: PoseStamped) -> None:
         """
-        Update robot physical orientation (IMU/compass emulation).
+        Update robot physical orientation from onboard estimated pose.
 
-        Note: Strictly extracts orientation (yaw); never reads global (x, y) position.
+        Note: Strictly extracts orientation (yaw); never reads ground truth.
         """
-        qx = msg.orientation.x
-        qy = msg.orientation.y
-        qz = msg.orientation.z
-        qw = msg.orientation.w
+        qx = msg.pose.orientation.x
+        qy = msg.pose.orientation.y
+        qz = msg.pose.orientation.z
+        qw = msg.pose.orientation.w
         siny_cosp = 2.0 * (qw * qz + qx * qy)
         cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
         self.yaw = math.atan2(siny_cosp, cosy_cosp)
