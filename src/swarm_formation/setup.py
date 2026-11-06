@@ -61,6 +61,8 @@ setup(
             'metrics_logger = swarm_formation.metrics_logger:main',
             'process_bag = swarm_formation.rosbag_processor:main',
             'plot_bag = swarm_formation.plot_generator:main',
+            'run_campaign = swarm_formation.campaign_runner:main',
+            'plot_campaign = swarm_formation.campaign_visualizer:main',
         ],
     },
 )
