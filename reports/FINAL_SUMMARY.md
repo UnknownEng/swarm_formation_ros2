@@ -93,7 +93,11 @@ collected 97 items
 
 ## 4. Master Statistical Findings & Scientific Insights
 
-Across the **325 Monte Carlo simulation runs** (25 seeds $\times$ 13 conditions) conducted under identical crossing trajectories, the quantitative data reveals three primary scientific findings:
+Across the **325 Monte Carlo simulation runs** (25 seeds $\times$ 13 conditions) conducted under identical crossing trajectories, the quantitative data reveals three primary scientific findings.
+
+### 4.0 Simulation Engine Split (Plain Disclosure)
+- **`campaign_simulator.py` (50 Hz Unicycle Simulator)**: **325 of 325 runs (100.0%)**. All 13 experimental conditions across 25 random seeds in Milestone M8 were executed exclusively using the pure-Python deterministic 50 Hz unicycle simulator (`campaign_simulator.py`), directly executing the pure algorithmic libraries (`cbf_qp.py`, `consensus.py`, `potential_field.py`, `kinematics.py`).
+- **Gazebo Harmonic (Rigid-Body Physics Simulation)**: **0 of 325 runs (0.0%)** in the M8 statistical campaign. High-fidelity Gazebo Harmonic was utilized for continuous physics validation in M0 (3 baseline experiments), M4 (controller acceptance tests), M6 (safety filter integration), M7 (42.4s, 68,031-message rosbag recording in `results/M7/gazebo_swarm_bag/`), and the M9/M10 final re-evaluation runs, but was not used for the 325-run Monte Carlo batch sweep due to execution time constraints (325 Gazebo runs at 25s each would require > 2.5 hours).
 
 ### 4.1 Master Statistical Summary Table
 
@@ -101,11 +105,11 @@ Across the **325 Monte Carlo simulation runs** (25 seeds $\times$ 13 conditions)
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **1. Baseline (Unshielded)** | 25 | $0.0181 \pm 0.0046$ | $[0.0162, 0.0200]$ | $0.1649 \pm 0.0597$ | 9.32 | **0.0%** | $395.96$ |
 | **2. APF-Only Barrier** | 25 | $0.0177 \pm 0.0050$ | $[0.0156, 0.0198]$ | $0.8547 \pm 0.0391$ | 0.00 | **100.0%** | $391.52$ |
-| **3. CBF-QP Safety Filter** | 25 | $1.1318 \pm 0.8543$ | $[0.7792, 1.4845]$ | $0.5467 \pm 0.0027$ | 0.00 | **100.0%** | **$208.84$ (-47.2%)** |
+| **3. CBF-QP Safety Filter** | 25 | $1.1318 \pm 0.8543$ | $[0.7792, 1.4845]$ | $0.5467 \pm 0.0027$ | 0.00 | **100.0%** | **$208.84$ (-46.7% vs APF)** |
 | **4. Ablation: Huber-Only** | 25 | $0.0167 \pm 0.0054$ | $[0.0145, 0.0189]$ | $0.9093 \pm 0.0489$ | 0.00 | **100.0%** | $354.27$ |
 | **5. Ablation: EMA-Only** | 25 | $0.0181 \pm 0.0044$ | $[0.0162, 0.0199]$ | $0.8338 \pm 0.0447$ | 0.00 | **100.0%** | $385.94$ |
 | **6. Ablation: Heartbeat-Only**| 25 | $0.0177 \pm 0.0050$ | $[0.0156, 0.0198]$ | $0.8547 \pm 0.0391$ | 0.00 | **100.0%** | $391.52$ |
-| **7. Full Resilient Stack** | 25 | $1.5631 \pm 0.5839$ | $[1.3221, 1.8041]$ | $0.5471 \pm 0.0018$ | 0.00 | **100.0%** | **$147.59$** |
+| **7. Full Resilient Stack** | 25 | $1.5631 \pm 0.5839$ | $[1.3221, 1.8041]$ | $0.5471 \pm 0.0018$ | 0.00 | **100.0%** | **$147.59$ (-62.3% vs APF)** |
 | **8. Drop Sweep: 15% Loss** | 25 | $0.8014 \pm 0.8092$ | $[0.4674, 1.1354]$ | $0.5223 \pm 0.0081$ | 0.00 | **100.0%** | $295.34$ |
 | **9. Drop Sweep: 30% Loss** | 25 | $0.5276 \pm 0.7198$ | $[0.2305, 0.8247]$ | $0.5189 \pm 0.0095$ | 0.00 | **100.0%** | $328.03$ |
 | **10. Drop Sweep: 50% Loss** | 25 | $0.0367 \pm 0.0950$ | $[-0.0025, 0.0759]$ | $0.5214 \pm 0.0207$ | 0.64 | **96.0%** | $301.36$ |
@@ -113,9 +117,15 @@ Across the **325 Monte Carlo simulation runs** (25 seeds $\times$ 13 conditions)
 | **12. Delay Sweep: 100 ms** | 25 | $1.8823 \pm 0.0808$ | $[1.8490, 1.9157]$ | $0.8275 \pm 0.0011$ | 0.00 | **100.0%** | $140.55$ |
 | **13. Delay Sweep: 200 ms** | 25 | $1.9423 \pm 0.4007$ | $[1.7769, 2.1076]$ | $1.1038 \pm 0.0132$ | 0.00 | **100.0%** | $128.19$ |
 
-### 4.2 Key Scientific Insights
+### 4.2 Key Scientific Insights & Energy Correction
 1. **Unshielded Consensus Failure**: Without an active safety layer, standard consensus controllers fail catastrophically under crossing initial configurations: 100% of baseline runs experienced collisions ($d_{\min} = 0.165\,\text{m} \ll 0.50\,\text{m}$, with 9.32 impacts/run).
-2. **Minimal Correction Energy Efficiency**: Both APF and CBF-QP achieve 100% empirical collision avoidance ($d_{\min} \ge 0.50\,\text{m}$). However, APF continuously applies conservative repulsion forces that displace robots wide ($d_{\min} = 0.855\,\text{m}$), consuming **$391.5\,\text{J}$** of control energy. In contrast, the CBF-QP minimal-correction filter preserves the unconstrained nominal trajectory up to the exact boundary ($d_{\min} = 0.547\,\text{m}$), cutting energy expenditure by **47.2%** (**$208.8\,\text{J}$**).
+2. **Minimal Correction Energy Efficiency (Recomputed & Disambiguated)**:
+   - **Energy consumed by APF-Only**: $391.52\,\text{J}$.
+   - **Energy consumed by CBF-QP-Only**: $208.84\,\text{J}$.
+   - **Energy consumed by Unshielded Baseline**: $395.96\,\text{J}$.
+   - **Recomputed Reduction vs. APF**: $(391.52 - 208.84) / 391.52 = 46.66\% \approx \mathbf{46.7\%}$.
+   - **Recomputed Reduction vs. Unshielded Baseline**: $(395.96 - 208.84) / 395.96 = 47.26\% \approx \mathbf{47.2\%}$.
+   - *(Correction Note: The initial drafting cited 47.2% as the reduction compared to APF; recomputation confirms that 47.2% is the reduction relative to the Unshielded Baseline ($395.96\,\text{J}$), whereas the exact reduction relative to APF-Only ($391.52\,\text{J}$) is **46.7%**).*
 3. **Delay-Compensated Forward Invariance**: Under communication latency up to $\tau = 200\,\text{ms}$, our dynamic margin expansion $D_s^{\text{eff}} = D_s + 2 v_{\max} \tau$ expands the effective barrier from $0.547\,\text{m}$ to $1.104\,\text{m}$, maintaining a 100% collision-free record across all 25 random seeds.
 
 ---
