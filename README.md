@@ -15,9 +15,11 @@
 
 ## 1. Project Overview & Scientific Highlights
 
-This repository delivers a physics-verified robotics software framework for **decentralized multi-robot geometric formation control** in GPS-denied, obstacle-strewn disaster environments (modeled after an urban structural collapse). 
+This repository delivers a ROS 2 / Gazebo robotics software framework for **decentralized multi-robot geometric formation control** in GPS-denied, obstacle-strewn disaster environments (modeled after an urban structural collapse). 
 
 A swarm of **5 nonholonomic differential-drive mobile robots** autonomously self-organizes into a regular pentagon ($R = 2.0\,\text{m}$) without any central coordinator, global GPS/mocap positioning, or designated leader.
+
+> **Validation status (2026-11-07):** the statistical results in Section 6 come from a headless kinematic simulator that mirrors the ROS node pipeline. The look-ahead CBF and deadlock fix have **not yet been re-run in Gazebo**. Every committed Gazebo run that used the old safety layer ended without reaching the formation (`results/M6`, `results/M7`, `results/re_eval`).
 
 ```
                   Robot 1 (Top Vertex)
@@ -40,11 +42,11 @@ A swarm of **5 nonholonomic differential-drive mobile robots** autonomously self
    - **Distance-based rigidity control** with stress matrix and orientation alignment (Oh & Ahn 2014).
    - **Bearing-based consensus** with orthogonal projection nullspace operators (Zhao & Zelazo 2016).
 3. **Cooperative EKF Localization Law**: An onboard Extended Kalman Filter fuses wheel odometry and relative neighbor measurements to estimate local ego-pose. Ground truth is strictly isolated for offline metric evaluation.
-4. **Active Safety Layer (CBF-QP)**: A standalone Control Barrier Function Quadratic Program minimal-correction filter guarantees empirical collision avoidance ($d_{\min} \ge 0.50\,\text{m}$) while reducing actuator control effort by **47.2%** compared to Artificial Potential Fields.
-5. **Delay-Compensated Safety**: Dynamic barrier expansion $D_s^{\text{eff}} = D_s + 2 v_{\max} \tau_{\max}$ maintains 100% collision-free safety under wireless transport delays up to $200\,\text{ms}$.
+4. **Active Safety Layer (CBF-QP)**: A standalone look-ahead Control Barrier Function QP filter (exact 2D solver, exact unicycle mapping, right-hand deadlock breaking). In the kinematic campaign it kept every run collision-free ($d_{\min} \ge 0.50\,\text{m}$) **while still reaching the formation in 100% of clean-channel runs** (see Section 6).
+5. **Delay-Compensated Safety**: Barrier expansion $D_s^{\text{eff}} = D_s + \ell + 2 v_{\max} \tau_{\max}$. With latency actually applied to every peer measurement, all runs stayed collision-free up to 200 ms, but formation accuracy only holds to about 100 ms (at 200 ms, 32% of runs reach the formation).
 6. **Decoupled Network Impairments & Fault Injection**: Standalone nodes simulate Bernoulli packet loss, stochastic delay queues, sensor bias, and agent dropouts, with runtime ROS 2 service toggles.
 7. **Offline Rosbag-Driven Analytics**: Rosbag recording (`ros2 bag`), offline Procrustes metric extraction (`process_bag`), and publication plot generation (`plot_bag`).
-8. **Statistical Rigor & One-Command Replication**: 325-run Monte Carlo campaign (25 seeds $\times$ 13 conditions) with Student's $t$ 95% Confidence Intervals, fully reproducible via `./reproduce_all.sh`.
+8. **Statistical Rigor & One-Command Replication**: 400-run kinematic campaign (25 seeds $\times$ 16 conditions, leave-one-out ablation, applied packet-drop and latency sweeps) with Student's $t$ 95% Confidence Intervals, reproducible via `./reproduce_all.sh`. The campaign uses a headless unicycle simulator that mirrors the ROS node pipeline; it is not a physics simulation.
 
 ---
 
@@ -182,45 +184,65 @@ Because $P_{g_{ij}^*} g_{ij}^* = 0$, the controller achieves scale-invariant geo
 
 ## 5. Control Barrier Function (CBF-QP) Safety Layer
 
-### 5.1 Mathematical Formulation
-For any neighbor $j$, define the safety index $h_{ij}(p) = \|p_i - p_j\|^2 - (D_s^{\text{eff}})^2$, where $D_s = 0.50\,\text{m}$.
-Under network communication latency $\tau \in [0, \tau_{\max}]$, we augment the barrier margin:
-$$D_s^{\text{eff}} = D_s + 2 v_{\max} \tau_{\max}$$
-Assuming worst-case adversary motion $\|\dot{p}_j\| \le v_{\max}$, the forward-invariance barrier condition $\dot{h} \ge -\gamma h$ yields the linear constraint:
-$$A_j u_i \le b_j \iff -2 (p_i - p_j)^T u_i \le \gamma h_{ij} - 2 v_{\max} \|p_i - p_j\|$$
+### 5.1 Look-Ahead Formulation for Unicycles
+A unicycle cannot move sideways, so a barrier written for a single integrator ($\dot p_i = u_i$) stops holding once its output is converted back to $(v, \omega)$. The filter therefore works on the look-ahead point $q_i = p_i + \ell\,[\cos\psi_i,\ \sin\psi_i]^T$ ($\ell = 0.15\,\text{m}$), whose velocity is fully actuated:
+$$\dot q_i = R(\psi_i)\,\mathrm{diag}(1, \ell)\,[v_i,\ \omega_i]^T$$
+For each neighbor $j$, with $D^{\text{eff}} = D_s + \ell + 2 v_{\max} \tau_{\max}$ and $D_s = 0.55\,\text{m}$:
+$$h_{ij} = \|p_j - q_i\|^2 - (D^{\text{eff}})^2, \qquad (p_j - q_i)^T \dot q_i \le \tfrac{\gamma}{4}\, h_{ij}$$
+Keeping $\|p_j - q_i\| \ge D_s + \ell$ implies $\|p_j - p_i\| \ge D_s$ for the robot centers. At each 50 Hz step the robot solves
+$$\min_{u} \tfrac12 \|u - \dot q_i^{\text{nom}}\|^2 \quad \text{s.t.}\quad A_k u \le b_k\ \ \forall k,\quad \|u\| \le v_{\max}$$
+exactly (2D active-set enumeration, including the speed-circle intersections), and maps $u$ back to $(v, \omega)$ with the exact inverse. The inequality the QP enforces is therefore the one the robot actually executes.
 
-At each 50 Hz control step, the robot solves the convex Quadratic Program:
-$$\min_{u \in \mathbb{R}^2} \frac{1}{2} \|u - u_{\text{raw}}\|^2 \quad \text{subject to } A_k u \le b_k, \quad \forall k \in \text{Peers} \cup \text{Obstacles}$$
+### 5.2 Deadlock Breaking
+Symmetric multi-robot CBF filters are known to deadlock: in the original implementation the clean-channel CBF stack reached the formation in only 36% of runs (12% for the full stack). When the nominal command pushes into a barrier, the filter now adds a tangential component (every robot veers to its right, like a roundabout). This changes only the *nominal* input, so the barrier constraint is unaffected.
 
-### 5.2 Efficiency: CBF-QP vs. Artificial Potential Fields
-- **APF Repulsion**: Repels robots early and continuously ($d_{\min} = 0.855\,\text{m}$), dissipating **$391.5\,\text{J}$** of control energy.
-- **CBF-QP Filter**: Modifies velocity only at the exact barrier boundary ($d_{\min} = 0.547\,\text{m} \approx 0.55\,\text{m}$), reducing actuator energy expenditure by **47.2%** (**$208.8\,\text{J}$**).
+### 5.3 What Is and Is Not Guaranteed
+- The barrier is enforced on the *estimated* relative positions. Estimation error, measurement noise and latency beyond $\tau_{\max}$ are not covered, so collision avoidance is reported as **empirical**, not certified.
+- The reciprocal split ($\gamma/4$) assumes neighbors run the same filter.
+- Safety under delay relies on the margin $2 v_{\max}\tau_{\max}$; the campaign checks this with the delay actually applied to every peer measurement.
 
 ---
 
-## 6. Large-Scale Statistical Campaign (325 Runs)
+## 6. Statistical Campaign (400 Runs)
 
-A 325-simulation campaign (25 random seeds $\times$ 13 experimental conditions) was executed under crossing trajectory conditions:
+Headless kinematic simulator (`campaign_simulator.py`) that mirrors the ROS node pipeline: real `RobotEKF`, the same controller and CBF code as the nodes, and drop, delay and jitter actually applied to every peer measurement. Crossing initial conditions, 30 s per run. "Impaired" = the launch file's fault defaults (15% drop, 80 ± 40 ms delay) plus range/bearing noise (0.05 m / 0.02 rad). "Reached formation" = shape error below 0.25 m for 2 s.
 
-| Experimental Condition | Seeds | Shape Error (m) [Mean $\pm$ Std] | 95% Confidence Interval (m) | Min Distance (m) [Mean $\pm$ Std] | Empirical Collision-Free Rate | Mean Energy ($\int \|u\|^2 dt$) |
+| Condition | Reached formation | Final shape error (m), mean [95% CI] | Min distance (m), mean / worst | Collision-free | Path length (m) | Est. error (m) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Baseline (Unshielded)** | 25 | $0.0181 \pm 0.0046$ | $[0.0162, 0.0200]$ | $0.1649 \pm 0.0597$ | **0.0%** (9.32 crashes/run) | $395.96$ |
-| **APF-Only Barrier** | 25 | $0.0177 \pm 0.0050$ | $[0.0156, 0.0198]$ | $0.8547 \pm 0.0391$ | **100.0%** | $391.52$ |
-| **CBF-QP Safety Filter** | 25 | $1.1318 \pm 0.8543$ | $[0.7792, 1.4845]$ | $0.5467 \pm 0.0027$ | **100.0%** | **$208.84$ (-47.2%)** |
-| **Full Resilient Stack** | 25 | $1.5631 \pm 0.5839$ | $[1.3221, 1.8041]$ | $0.5471 \pm 0.0018$ | **100.0%** | **$147.59$** |
-| **Drop Sweep: 15% Loss** | 25 | $0.8014 \pm 0.8092$ | $[0.4674, 1.1354]$ | $0.5223 \pm 0.0081$ | **100.0%** | $295.34$ |
-| **Drop Sweep: 30% Loss** | 25 | $0.5276 \pm 0.7198$ | $[0.2305, 0.8247]$ | $0.5189 \pm 0.0095$ | **100.0%** | $328.03$ |
-| **Drop Sweep: 50% Loss** | 25 | $0.0367 \pm 0.0950$ | $[-0.0025, 0.0759]$ | $0.5214 \pm 0.0207$ | **96.0%** | $301.36$ |
-| **Delay Sweep: 50 ms** | 25 | $1.8034 \pm 0.1167$ | $[1.7553, 1.8516]$ | $0.6870 \pm 0.0010$ | **100.0%** | $139.66$ |
-| **Delay Sweep: 100 ms** | 25 | $1.8823 \pm 0.0808$ | $[1.8490, 1.9157]$ | $0.8275 \pm 0.0011$ | **100.0%** | $140.55$ |
-| **Delay Sweep: 200 ms** | 25 | $1.9423 \pm 0.4007$ | $[1.7769, 2.1076]$ | $1.1038 \pm 0.0132$ | **100.0%** | $128.19$ |
+| Unshielded consensus (clean) | 100% | 0.009 [0.007, 0.011] | 0.140 / 0.071 | 0% | 22.0 | 0.004 |
+| APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
+| CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
+| Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
+| Full stack, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
+| Full stack without Huber, impaired | 100% | 0.255 [0.228, 0.282] | 1.116 / 0.975 | 100% | 55.9 | 0.025 |
+| Full stack without EMA, impaired | 100% | 0.226 [0.197, 0.255] | 1.036 / 0.938 | 100% | 51.3 | 0.023 |
+| Full stack without heartbeat, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
+| CBF only (no resilience), impaired | 100% | 0.211 [0.188, 0.234] | 1.110 / 0.928 | 100% | 50.8 | 0.023 |
+| Full stack, 15% drop | 100% | 0.053 [0.047, 0.060] | 0.765 / 0.660 | 100% | 37.7 | 0.005 |
+| Full stack, 30% drop | 100% | 0.099 [0.086, 0.113] | 0.766 / 0.644 | 100% | 49.3 | 0.005 |
+| Full stack, 50% drop | 100% | 0.214 [0.184, 0.244] | 0.759 / 0.614 | 100% | 64.0 | 0.006 |
+| Full stack, 50 ms delay (matched margin) | 100% | 0.162 [0.144, 0.180] | 0.873 / 0.820 | 100% | 47.6 | 0.013 |
+| Full stack, 100 ms delay (matched margin) | 100% | 0.222 [0.194, 0.250] | 0.976 / 0.912 | 100% | 55.1 | 0.023 |
+| Full stack, 200 ms delay (matched margin) | 32% | 0.287 [0.265, 0.310] | 1.208 / 1.158 | 100% | 53.5 | 0.039 |
+| Full stack, 200 ms delay (fixed 50 ms margin) | 8% | 0.318 [0.299, 0.336] | 0.870 / 0.802 | 100% | 57.5 | 0.042 |
 
-### Master Campaign Visualizations
-All 4 figures are generated directly from `campaign_results.json` into `results/M8/plots/`:
-1. `ablation_study_barchart.png`: Component-wise error and energy comparison.
-2. `safety_comparison_apf_vs_cbf.png`: Minimum inter-robot distance box plots.
-3. `difficulty_sweep_packet_drop.png`: Packet drop degradation curves (0% to 50%).
-4. `difficulty_sweep_latency.png`: Delay-compensated margin expansion (0 to 200 ms).
+**What the data supports:**
+- **Safety:** every CBF and APF run, in all 15 conditions with avoidance, stayed above the 0.50 m collision limit. The worst case was 0.614 m (full stack, 50% drop). Without avoidance, every run collided.
+- **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
+- **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
+- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.802 m). Formation accuracy does not: at 200 ms, only 32% of runs reach the formation (8% with the fixed margin). The stack works to about 100 ms of delay.
+- **Packet loss:** the formation still forms at 50% drop, but final error rises from 0.009 m to 0.214 m.
+- **Resilience components:** under nominal impairment none of them measurably helps. CBF without Huber, EMA or heartbeat does as well (0.211 m vs 0.220 m, overlapping CIs). Removing the heartbeat changes nothing at all: the network node keeps republishing a stale measurement for 1.5 s, longer than the 1.2 s heartbeat timeout, so the timeout never fires. The same is true in the ROS nodes.
+- **Under impairment**, final shape error (about 0.22 m) sits close to the 0.25 m threshold, so "reached formation" there means the robots touched the threshold, not that they settled well inside it.
+
+### Campaign Figures
+Generated from `campaign_results.json` into `results/M8/plots/`:
+1. `ablation_study_barchart.png`: leave-one-out ablation under nominal impairment.
+2. `safety_comparison_apf_vs_cbf.png`: minimum inter-robot distance distributions.
+3. `difficulty_sweep_packet_drop.png`: packet drop sweep (0–50%).
+4. `difficulty_sweep_latency.png`: applied latency sweep (0–200 ms).
+
+> The M8 numbers published before 2026-11-07 (325 runs, "47.2% energy reduction", "safe under 200 ms") came from a simulator that did not apply delay and from CBF runs that deadlocked. They are superseded; see the erratum in `reports/TECHNICAL_REPORT.md`.
 
 ---
 

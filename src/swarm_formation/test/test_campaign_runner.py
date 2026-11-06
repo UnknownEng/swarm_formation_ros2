@@ -35,69 +35,100 @@ from swarm_formation.campaign_visualizer import CampaignVisualizer
 def test_compute_statistics_known_values():
     """Verify statistical calculations for sample mean, standard deviation, and 95% CI."""
     data = [10.0, 12.0, 11.0, 13.0, 9.0]
-    # mean = 11.0, variance = (1 + 1 + 0 + 4 + 4)/4 = 10/4 = 2.5, std = sqrt(2.5) ~ 1.5811
     stats_dict = compute_statistics(data)
     assert stats_dict['mean'] == pytest.approx(11.0, abs=1e-5)
     assert stats_dict['std'] == pytest.approx(np.sqrt(2.5), abs=1e-4)
     assert stats_dict['ci_lower'] < stats_dict['mean']
     assert stats_dict['ci_upper'] > stats_dict['mean']
-    # Symmetry of confidence interval around sample mean
     margin = stats_dict['mean'] - stats_dict['ci_lower']
     assert stats_dict['ci_upper'] - stats_dict['mean'] == pytest.approx(margin, abs=1e-5)
 
 
 def test_define_campaign_conditions_matrix():
-    """Verify that all required conditions, ablations, and sweeps are defined."""
+    """Verify the safety comparison, leave-one-out ablation, and both sweeps are defined."""
     conditions = define_campaign_conditions(duration_sec=20.0)
     required = [
         'baseline_unshielded',
         'apf_only',
         'cbf_qp_only',
-        'ablation_huber_only',
-        'ablation_ema_only',
-        'ablation_heartbeat_only',
         'full_resilient_cbf',
+        'impaired_full_resilient_cbf',
+        'impaired_no_huber',
+        'impaired_no_ema',
+        'impaired_no_heartbeat',
+        'impaired_cbf_only',
         'sweep_drop_15pct',
         'sweep_drop_30pct',
         'sweep_drop_50pct',
         'sweep_delay_50ms',
         'sweep_delay_100ms',
         'sweep_delay_200ms',
+        'sweep_delay_200ms_fixed_margin',
     ]
     for req in required:
         assert req in conditions, f'Condition {req} missing from campaign matrix'
 
+    # Leave-one-out: each ablation differs from the full stack in exactly one component
+    full = conditions['impaired_full_resilient_cbf']
+    for comp in ('huber', 'ema', 'heartbeat'):
+        abl = conditions[f'impaired_no_{comp}']
+        assert getattr(abl, f'use_{comp}') is False
+        for other in ('huber', 'ema', 'heartbeat', 'cbf'):
+            if other != comp:
+                assert getattr(abl, f'use_{other}') == getattr(full, f'use_{other}')
+        assert abl.drop_rate == full.drop_rate and abl.delay_sec == full.delay_sec
 
-def test_single_simulation_baseline_vs_cbf_safety():
-    """Verify that unshielded crossing results in collisions while CBF-QP prevents collisions."""
+    # Latency sweep must apply delay, not only widen the CBF margin
+    assert conditions['sweep_delay_200ms'].delay_sec == pytest.approx(0.2)
+    assert conditions['sweep_delay_200ms_fixed_margin'].effective_cbf_delay_bound() == (
+        pytest.approx(0.05)
+    )
+
+
+def test_single_simulation_baseline_vs_cbf_safety_and_convergence():
+    """Unshielded crossing collides; CBF-QP stays safe AND still reaches the formation."""
     seed = 42
 
-    # 1. Unshielded crossing
-    cfg_unshielded = CampaignRunConfig(
-        duration_sec=15.0,
-        use_resilient=False,
-        use_cbf=False,
-        use_apf=False,
-        crossing_scenario=True,
-    )
-    res_unshielded = run_single_simulation(cfg_unshielded, seed)
+    res_unshielded = run_single_simulation(CampaignRunConfig(duration_sec=20.0), seed)
     assert res_unshielded['global_min_distance'] < 0.50, 'Unshielded crossing must violate safety'
-    assert res_unshielded['total_collisions'] > 0
     assert res_unshielded['empirically_collision_free'] is False
 
-    # 2. CBF-QP shielded crossing on same seed
-    cfg_cbf = CampaignRunConfig(
-        duration_sec=15.0,
-        use_resilient=False,
-        use_cbf=True,
-        use_apf=False,
-        crossing_scenario=True,
-    )
-    res_cbf = run_single_simulation(cfg_cbf, seed)
-    assert res_cbf['global_min_distance'] >= 0.50, 'CBF-QP must maintain safety'
-    assert res_cbf['total_collisions'] == 0
+    res_cbf = run_single_simulation(CampaignRunConfig(duration_sec=20.0, use_cbf=True), seed)
     assert res_cbf['empirically_collision_free'] is True
     assert res_cbf['total_safety_interventions'] > 0.0
+    assert res_cbf['is_converged'] is True, (
+        f"CBF-QP must not deadlock: final shape error {res_cbf['final_shape_error']:.3f} m"
+    )
+
+
+def test_delay_is_actually_applied_to_measurements():
+    """The latency sweep must delay peer measurements, not only change the CBF margin."""
+    cfg = CampaignRunConfig(duration_sec=3.0, use_cbf=True, delay_sec=0.2, jitter_sec=0.0)
+    res = run_single_simulation(cfg, 7)
+    assert res['mean_applied_latency_sec'] == pytest.approx(0.2, abs=1e-9)
+    assert res['cbf_delay_bound_sec'] == pytest.approx(0.2, abs=1e-9)
+
+    cfg_jitter = CampaignRunConfig(duration_sec=3.0, delay_sec=0.08, jitter_sec=0.04)
+    res_j = run_single_simulation(cfg_jitter, 7)
+    assert 0.06 < res_j['mean_applied_latency_sec'] < 0.10
+
+
+def test_packet_drop_rate_is_applied():
+    """Bernoulli drops on the peer measurement channel match the configured rate."""
+    res = run_single_simulation(CampaignRunConfig(duration_sec=5.0, drop_rate=0.3), 11)
+    assert res['packet_drop_fraction'] == pytest.approx(0.3, abs=0.04)
+
+
+def test_estimator_is_not_ground_truth():
+    """Localization uses the onboard EKF: small but non-zero error, growing with noise."""
+    clean = run_single_simulation(CampaignRunConfig(duration_sec=8.0), 5)
+    noisy = run_single_simulation(
+        CampaignRunConfig(duration_sec=8.0, range_noise_std=0.1, bearing_noise_std=0.05,
+                          odom_speed_noise_frac=0.1, odom_yaw_rate_noise_std=0.1),
+        5,
+    )
+    assert 0.0 < clean['mean_est_error'] < 0.2
+    assert noisy['mean_est_error'] > clean['mean_est_error']
 
 
 def test_mini_campaign_and_visualization_pipeline():
@@ -106,39 +137,30 @@ def test_mini_campaign_and_visualization_pipeline():
     plots_dir = os.path.join(tmp_dir, 'plots')
 
     try:
-        raw_data, csv_path, json_path = run_campaign(
-            num_seeds=3,
-            duration_sec=8.0,
-            output_dir=tmp_dir,
-        )
+        _, csv_path, json_path = run_campaign(num_seeds=2, duration_sec=6.0, output_dir=tmp_dir)
 
         assert os.path.exists(csv_path)
         assert os.path.exists(json_path)
 
-        # Verify CSV summary content
         with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-            assert len(rows) >= 10
+            rows = list(csv.DictReader(f))
+            assert len(rows) == len(define_campaign_conditions())
             for r in rows:
-                assert 'condition' in r
                 assert float(r['shape_error_mean']) > 0.0
-                assert float(r['collision_free_rate_pct']) >= 0.0
+                assert 0.0 <= float(r['convergence_rate_pct']) <= 100.0
+                assert 0.0 <= float(r['collision_free_rate_pct']) <= 100.0
 
-        # Verify JSON results structure
         with open(json_path, 'r', encoding='utf-8') as f:
             loaded = json.load(f)
-            assert 'baseline_unshielded' in loaded
-            assert 'full_resilient_cbf' in loaded
-            assert len(loaded['baseline_unshielded']['seed_results']) == 3
+            assert len(loaded['baseline_unshielded']['seed_results']) == 2
+            assert loaded['sweep_delay_200ms']['summary']['applied_latency_ms'] == (
+                pytest.approx(200.0)
+            )
 
-        # Test visualization pipeline
         visualizer = CampaignVisualizer.from_json(json_path, output_dir=plots_dir)
         plots = visualizer.generate_all_campaign_plots()
-
         assert len(plots) == 4
         for p in plots:
-            assert os.path.exists(p)
             assert os.path.getsize(p) > 10000
 
     finally:

@@ -222,7 +222,8 @@ def compute_relative_peer_apf(
                 denom = max(dist - d_collision, 0.01)
                 f_barrier_mag = k_barrier * (1.0 / (denom * denom))
 
-            closing_vel = rel_vx * (dx / dist) + rel_vy * (dy / dist)
+            # d/dt ||p_j - p_i|| = rel_v . (p_j - p_i)/dist; negative means closing in.
+            closing_vel = -(rel_vx * (dx / dist) + rel_vy * (dy / dist))
             f_damp_mag = 0.0
             if closing_vel > 0.0:
                 f_damp_mag = k_damp * (closing_vel / dist)

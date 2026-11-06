@@ -51,20 +51,26 @@ class CampaignVisualizer:
             data = json.load(f)
         return cls(campaign_data=data, output_dir=output_dir)
 
+    def _num_seeds(self) -> int:
+        for cdata in self.data.values():
+            return int(cdata['summary'].get('num_seeds', len(cdata.get('seed_results', []))))
+        return 0
+
     def plot_ablation_study(self, filename: str = 'ablation_study_barchart.png') -> str:
         """Generate comparative bar chart for ablation conditions with 95% CI error bars."""
         conditions = [
-            ('baseline_unshielded', 'Baseline\n(Linear)'),
-            ('ablation_huber_only', 'Huber\nOnly'),
-            ('ablation_ema_only', 'EMA\nOnly'),
-            ('ablation_heartbeat_only', 'Heartbeat\nOnly'),
-            ('full_resilient_cbf', 'Full Stack\n(Resilient+CBF)'),
+            ('impaired_cbf_only', 'CBF only\n(no resilience)'),
+            ('impaired_no_huber', 'Full stack\nwithout Huber'),
+            ('impaired_no_ema', 'Full stack\nwithout EMA'),
+            ('impaired_no_heartbeat', 'Full stack\nwithout Heartbeat'),
+            ('impaired_full_resilient_cbf', 'Full stack'),
         ]
 
         labels = []
         shape_means = []
         shape_ci_errs = []
         safe_rates = []
+        conv_rates = []
 
         for key, name in conditions:
             if key in self.data:
@@ -74,9 +80,12 @@ class CampaignVisualizer:
                 ci_margin = max(0.0, s['shape_error_ci_upper'] - s['shape_error_mean'])
                 shape_ci_errs.append(ci_margin)
                 safe_rates.append(s['collision_free_rate_pct'])
+                conv_rates.append(s.get('convergence_rate_pct', float('nan')))
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
-        fig.suptitle('Ablation Study: Swarm Resiliency & Safety Components (25 Seeds)',
+        fig.suptitle(
+            'Leave-one-out ablation under nominal impairment '
+            f'(15% drop, 80+/-40 ms delay, noise; {self._num_seeds()} seeds)',
                      fontsize=14, fontweight='bold')
 
         x_pos = np.arange(len(labels))
@@ -94,21 +103,23 @@ class CampaignVisualizer:
         ax1.grid(True, linestyle=':', alpha=0.6, axis='y')
         ax1.legend(loc='upper right')
 
-        # Panel 2: Empirical Collision-Free Rate
-        safe_colors = ['#ef4444' if r < 100.0 else '#22c55e' for r in safe_rates]
-        bars2 = ax2.bar(x_pos, safe_rates, color=safe_colors, edgecolor='black',
-                        alpha=0.85, width=0.6)
+        # Panel 2: Convergence and collision-free rates side by side
+        width = 0.38
+        bars_conv = ax2.bar(x_pos - width / 2, conv_rates, width=width, color='#60a5fa',
+                            edgecolor='black', alpha=0.85, label='Reached formation')
+        bars_safe = ax2.bar(x_pos + width / 2, safe_rates, width=width, color='#22c55e',
+                            edgecolor='black', alpha=0.85, label='Collision-free')
         ax2.set_xticks(x_pos)
         ax2.set_xticklabels(labels, fontsize=10)
-        ax2.set_ylabel('Empirical Collision-Free Rate (%)', fontsize=11)
-        ax2.set_ylim(0, 110)
-        ax2.set_title('Swarm Safety Preservation', fontsize=12, fontweight='bold')
+        ax2.set_ylabel('Runs (%)', fontsize=11)
+        ax2.set_ylim(0, 115)
+        ax2.set_title('Convergence and Safety', fontsize=12, fontweight='bold')
         ax2.grid(True, linestyle=':', alpha=0.6, axis='y')
+        ax2.legend(loc='lower right')
 
-        # Add percentage labels above bars
-        for bar, val in zip(bars2, safe_rates):
-            ax2.text(bar.get_x() + bar.get_width() / 2.0, val + 2.0,
-                     f'{val:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
+        for bar, val in list(zip(bars_conv, conv_rates)) + list(zip(bars_safe, safe_rates)):
+            ax2.text(bar.get_x() + bar.get_width() / 2.0, val + 1.5,
+                     f'{val:.0f}%', ha='center', va='bottom', fontsize=8)
 
         out_path = os.path.join(self.output_dir, filename)
         fig.tight_layout()
@@ -134,7 +145,8 @@ class CampaignVisualizer:
                 labels.append(name)
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.set_title('Collision Avoidance Comparison under Crossing Trajectories (25 Seeds)',
+        ax.set_title('Collision Avoidance under Crossing Trajectories '
+                     f'({self._num_seeds()} seeds, clean channel)',
                      fontsize=13, fontweight='bold')
 
         box_style = {'facecolor': '#dbeafe', 'color': '#1d4ed8'}
@@ -154,8 +166,8 @@ class CampaignVisualizer:
 
         ax.axhline(0.50, color='r', linestyle='-', linewidth=2.0,
                    label='Collision Limit (0.50m - Danger Boundary)')
-        ax.axhline(0.70, color='orange', linestyle='--', linewidth=1.5,
-                   label='Safety Barrier Margin (0.70m)')
+        ax.axhline(0.55, color='orange', linestyle='--', linewidth=1.5,
+                   label='CBF safety distance D_s (0.55m)')
 
         ax.set_ylabel('Global Minimum Inter-Robot Distance (m)', fontsize=11)
         ax.grid(True, linestyle=':', alpha=0.6, axis='y')
@@ -181,6 +193,7 @@ class CampaignVisualizer:
         shape_lowers = []
         shape_uppers = []
         safe_rates = []
+        conv_rates = []
 
         for key, drop in sweep_keys:
             if key in self.data:
@@ -190,9 +203,10 @@ class CampaignVisualizer:
                 shape_lowers.append(s['shape_error_ci_lower'])
                 shape_uppers.append(s['shape_error_ci_upper'])
                 safe_rates.append(s['collision_free_rate_pct'])
+                conv_rates.append(s.get('convergence_rate_pct', float('nan')))
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        fig.suptitle('Environmental Robustness: Network Packet Loss Sweep (25 Seeds)',
+        fig.suptitle(f'Packet Loss Sweep, full stack ({self._num_seeds()} seeds)',
                      fontsize=14, fontweight='bold')
 
         # Panel 1: Shape Error vs Packet Drop
@@ -207,11 +221,12 @@ class CampaignVisualizer:
         ax1.legend()
 
         # Panel 2: Safety Rate vs Packet Drop
-        ax2.plot(drops, safe_rates, 'g-s', linewidth=2.5, label='Collision-Free Rate')
+        ax2.plot(drops, safe_rates, 'g-s', linewidth=2.5, label='Collision-free')
+        ax2.plot(drops, conv_rates, 'b-o', linewidth=2.0, label='Reached formation')
         ax2.set_xlabel('Packet Drop Rate (%)', fontsize=11)
-        ax2.set_ylabel('Empirical Collision-Free Rate (%)', fontsize=11)
+        ax2.set_ylabel('Runs (%)', fontsize=11)
         ax2.set_ylim(0, 110)
-        ax2.set_title('Safety Resilience', fontsize=12, fontweight='bold')
+        ax2.set_title('Convergence and Safety', fontsize=12, fontweight='bold')
         ax2.grid(True, linestyle=':', alpha=0.6)
         ax2.legend()
 
@@ -235,6 +250,7 @@ class CampaignVisualizer:
         shape_lowers = []
         shape_uppers = []
         dist_means = []
+        conv_rates = []
 
         for key, delay in sweep_keys:
             if key in self.data:
@@ -244,9 +260,13 @@ class CampaignVisualizer:
                 shape_lowers.append(s['shape_error_ci_lower'])
                 shape_uppers.append(s['shape_error_ci_upper'])
                 dist_means.append(s['min_distance_mean'])
+                conv_rates.append(s.get('convergence_rate_pct', float('nan')))
+
+        fixed = self.data.get('sweep_delay_200ms_fixed_margin', {}).get('summary')
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        fig.suptitle('Environmental Robustness: Communication Latency Sweep (25 Seeds)',
+        fig.suptitle('Applied Latency Sweep, full stack, CBF margin matched to latency '
+                     f'({self._num_seeds()} seeds)',
                      fontsize=14, fontweight='bold')
 
         # Panel 1: Shape Error vs Delay
@@ -254,19 +274,24 @@ class CampaignVisualizer:
         ax1.fill_between(delays, shape_lowers, shape_uppers, color='m', alpha=0.2,
                          label='95% Confidence Band')
         ax1.axhline(0.25, color='r', linestyle='--', label='Convergence Threshold (0.25m)')
-        ax1.set_xlabel('Communication Delay (ms)', fontsize=11)
+        for d, c, m in zip(delays, conv_rates, shape_means):
+            ax1.annotate(f'{c:.0f}% conv.', (d, m), textcoords='offset points',
+                         xytext=(0, 8), ha='center', fontsize=8)
+        ax1.set_xlabel('Applied Delay (ms)', fontsize=11)
         ax1.set_ylabel('Final Shape Error (RMS, m)', fontsize=11)
         ax1.set_title('Formation Precision vs Latency', fontsize=12, fontweight='bold')
         ax1.grid(True, linestyle=':', alpha=0.6)
         ax1.legend()
 
         # Panel 2: Mean Min Distance vs Delay
-        ax2.plot(delays, dist_means, 'c-^', linewidth=2, label='Mean Min Distance')
+        ax2.plot(delays, dist_means, 'c-^', linewidth=2,
+                 label='Mean min distance (matched margin)')
+        if fixed is not None:
+            ax2.plot([200.0], [fixed['min_distance_mean']], 'rx', markersize=10, mew=2,
+                     label='200 ms with fixed 50 ms margin')
         ax2.axhline(0.50, color='r', linestyle='-', linewidth=2.0,
                     label='Collision Limit (0.50m)')
-        ax2.axhline(0.70, color='orange', linestyle='--',
-                    label='Nominal Barrier Zone (0.70m)')
-        ax2.set_xlabel('Communication Delay (ms)', fontsize=11)
+        ax2.set_xlabel('Applied Delay (ms)', fontsize=11)
         ax2.set_ylabel('Mean Min Distance (m)', fontsize=11)
         ax2.set_title('Barrier Margin Maintenance', fontsize=12, fontweight='bold')
         ax2.grid(True, linestyle=':', alpha=0.6)

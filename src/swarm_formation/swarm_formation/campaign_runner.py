@@ -16,10 +16,11 @@
 
 import argparse
 import csv
+from dataclasses import asdict
 import json
 import math
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 try:
@@ -73,109 +74,65 @@ def compute_statistics(values: List[float], alpha: float = 0.05) -> Dict[str, fl
     }
 
 
+# Channel impairment used by the launch file when enable_faults:=true
+NOMINAL_IMPAIRMENT = {
+    'drop_rate': 0.15,
+    'delay_sec': 0.08,
+    'jitter_sec': 0.04,
+    'range_noise_std': 0.05,
+    'bearing_noise_std': 0.02,
+}
+
+FULL_STACK = {
+    'use_huber': True,
+    'use_ema': True,
+    'use_heartbeat': True,
+    'use_cbf': True,
+}
+
+
 def define_campaign_conditions(duration_sec: float = 30.0) -> Dict[str, CampaignRunConfig]:
-    """Define the complete matrix of experimental conditions, ablations, and sweeps."""
+    """
+    Define the experimental matrix.
+
+    * Safety comparison (clean channel): unshielded, APF, CBF-QP, full stack.
+    * Leave-one-out ablation under the nominal impairment of the launch file
+      (15% drop, 80 ms delay, +/-40 ms jitter, sensor noise): full stack, the full
+      stack minus each resilience component, and CBF without any resilience component.
+    * Sweeps on the full stack: packet drop, and *applied* latency with a CBF margin
+      matched to the latency, plus one 200 ms run with the ROS default 50 ms margin.
+    """
+    def cfg(**kw: Any) -> CampaignRunConfig:
+        return CampaignRunConfig(duration_sec=duration_sec, **kw)
+
     conditions: Dict[str, CampaignRunConfig] = {}
 
-    # 1. Baseline: Unshielded linear consensus
-    conditions['baseline_unshielded'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=False,
-        use_huber=False,
-        use_ema=False,
-        use_heartbeat=False,
-        use_cbf=False,
-        use_apf=False,
-    )
+    # 1. Safety comparison on a clean channel
+    conditions['baseline_unshielded'] = cfg()
+    conditions['apf_only'] = cfg(use_apf=True)
+    conditions['cbf_qp_only'] = cfg(use_cbf=True)
+    conditions['full_resilient_cbf'] = cfg(**FULL_STACK)
 
-    # 2. Collision avoidance comparison
-    conditions['apf_only'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=False,
-        use_huber=False,
-        use_ema=False,
-        use_heartbeat=False,
-        use_cbf=False,
-        use_apf=True,
-    )
+    # 2. Leave-one-out ablation under nominal impairment
+    conditions['impaired_full_resilient_cbf'] = cfg(**FULL_STACK, **NOMINAL_IMPAIRMENT)
+    for comp in ('huber', 'ema', 'heartbeat'):
+        flags = dict(FULL_STACK)
+        flags[f'use_{comp}'] = False
+        conditions[f'impaired_no_{comp}'] = cfg(**flags, **NOMINAL_IMPAIRMENT)
+    conditions['impaired_cbf_only'] = cfg(use_cbf=True, **NOMINAL_IMPAIRMENT)
 
-    conditions['cbf_qp_only'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=False,
-        use_huber=False,
-        use_ema=False,
-        use_heartbeat=False,
-        use_cbf=True,
-        use_apf=False,
-    )
-
-    # 3. Component ablations
-    conditions['ablation_huber_only'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=True,
-        use_huber=True,
-        use_ema=False,
-        use_heartbeat=False,
-        use_cbf=False,
-        use_apf=True,
-    )
-
-    conditions['ablation_ema_only'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=False,
-        use_huber=False,
-        use_ema=True,
-        use_heartbeat=False,
-        use_cbf=False,
-        use_apf=True,
-    )
-
-    conditions['ablation_heartbeat_only'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=False,
-        use_huber=False,
-        use_ema=False,
-        use_heartbeat=True,
-        use_cbf=False,
-        use_apf=True,
-    )
-
-    # 4. Full Resilient Stack with CBF-QP Safety Filter
-    conditions['full_resilient_cbf'] = CampaignRunConfig(
-        duration_sec=duration_sec,
-        use_resilient=True,
-        use_huber=True,
-        use_ema=True,
-        use_heartbeat=True,
-        use_cbf=True,
-        use_apf=False,
-    )
-
-    # 5. Network Drop Sweep (on Full Stack)
+    # 3. Packet drop sweep (full stack, no delay)
     for drop in [0.15, 0.30, 0.50]:
-        conditions[f'sweep_drop_{int(drop*100)}pct'] = CampaignRunConfig(
-            duration_sec=duration_sec,
-            use_resilient=True,
-            use_huber=True,
-            use_ema=True,
-            use_heartbeat=True,
-            use_cbf=True,
-            use_apf=False,
-            drop_rate=drop,
-        )
+        conditions[f'sweep_drop_{int(round(drop * 100))}pct'] = cfg(**FULL_STACK, drop_rate=drop)
 
-    # 6. Latency Sweep (on Full Stack)
+    # 4. Latency sweep: delay is actually applied to every peer measurement
     for delay_ms in [50, 100, 200]:
-        conditions[f'sweep_delay_{delay_ms}ms'] = CampaignRunConfig(
-            duration_sec=duration_sec,
-            use_resilient=True,
-            use_huber=True,
-            use_ema=True,
-            use_heartbeat=True,
-            use_cbf=True,
-            use_apf=False,
-            delay_sec=float(delay_ms) / 1000.0,
+        conditions[f'sweep_delay_{delay_ms}ms'] = cfg(
+            **FULL_STACK, delay_sec=delay_ms / 1000.0
         )
+    conditions['sweep_delay_200ms_fixed_margin'] = cfg(
+        **FULL_STACK, delay_sec=0.200, cbf_delay_bound_sec=0.05
+    )
 
     return conditions
 
@@ -184,12 +141,22 @@ def run_campaign(
     num_seeds: int = 25,
     duration_sec: float = 30.0,
     output_dir: str = 'results/M8',
+    condition_names: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], str, str]:
-    """Execute complete campaign across all seeds and return aggregated summaries."""
+    """
+    Execute the campaign across all seeds and return aggregated summaries.
+
+    :param condition_names: Optional subset of condition names to run (default: all).
+    """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
     conditions = define_campaign_conditions(duration_sec=duration_sec)
+    if condition_names is not None:
+        unknown = set(condition_names) - set(conditions)
+        if unknown:
+            raise ValueError(f'Unknown campaign conditions: {sorted(unknown)}')
+        conditions = {k: v for k, v in conditions.items() if k in condition_names}
     raw_campaign_data: Dict[str, Any] = {}
     summary_table_rows: List[Dict[str, Any]] = []
 
@@ -207,34 +174,28 @@ def run_campaign(
             seed_results.append(res)
 
         # Aggregate metrics
-        shape_errors = [r['final_shape_error'] for r in seed_results]
-        min_dists = [r['global_min_distance'] for r in seed_results]
-        collisions = [r['total_collisions'] for r in seed_results]
-        safe_flags = [1.0 if r['empirically_collision_free'] else 0.0 for r in seed_results]
-        conv_flags = [1.0 if r['is_converged'] else 0.0 for r in seed_results]
-        conv_times = [
-            r['convergence_time']
-            for r in seed_results
-            if r['convergence_time'] is not None
-        ]
-        est_errors = [r['mean_est_error'] for r in seed_results]
-        energies = [r['total_control_energy'] for r in seed_results]
+        def col(key: str) -> List[float]:
+            return [float(r[key]) for r in seed_results]
 
-        stats_shape = compute_statistics(shape_errors)
-        stats_min_dist = compute_statistics(min_dists)
-        stats_colls = compute_statistics(collisions)
-        stats_est = compute_statistics(est_errors)
-        stats_energy = compute_statistics(energies)
+        stats_shape = compute_statistics(col('final_shape_error'))
+        stats_min_dist = compute_statistics(col('global_min_distance'))
+        stats_colls = compute_statistics(col('total_collisions'))
+        stats_effort = compute_statistics(col('control_effort_lin'))
+        stats_path = compute_statistics(col('path_length'))
+        conv_times = [
+            r['convergence_time'] for r in seed_results if r['convergence_time'] is not None
+        ]
         stats_conv_time = compute_statistics(conv_times) if conv_times else {
             'mean': float('nan'), 'std': 0.0, 'ci_lower': 0.0, 'ci_upper': 0.0
         }
-
-        safe_rate = float(np.mean(safe_flags)) * 100.0
-        conv_rate = float(np.mean(conv_flags)) * 100.0
+        safe_rate = 100.0 * float(np.mean([r['empirically_collision_free'] for r in seed_results]))
+        conv_rate = 100.0 * float(np.mean([r['is_converged'] for r in seed_results]))
 
         cond_summary = {
             'condition': cond_name,
             'num_seeds': num_seeds,
+            'convergence_rate_pct': conv_rate,
+            'collision_free_rate_pct': safe_rate,
             'shape_error_mean': stats_shape['mean'],
             'shape_error_std': stats_shape['std'],
             'shape_error_ci_lower': stats_shape['ci_lower'],
@@ -243,34 +204,28 @@ def run_campaign(
             'min_distance_std': stats_min_dist['std'],
             'min_distance_ci_lower': stats_min_dist['ci_lower'],
             'min_distance_ci_upper': stats_min_dist['ci_upper'],
-            'collisions_mean': stats_colls['mean'],
-            'collision_free_rate_pct': safe_rate,
-            'convergence_rate_pct': conv_rate,
+            'min_distance_worst': float(min(col('global_min_distance'))),
+            'collision_steps_mean': stats_colls['mean'],
             'convergence_time_mean': stats_conv_time['mean'],
-            'mean_est_error': stats_est['mean'],
-            'mean_control_energy': stats_energy['mean'],
+            'mean_est_error': float(np.mean(col('mean_est_error'))),
+            'mean_yaw_error': float(np.mean(col('mean_yaw_error'))),
+            'control_effort_lin_mean': stats_effort['mean'],
+            'path_length_mean': stats_path['mean'],
+            'packet_drop_fraction': float(np.mean(col('packet_drop_fraction'))),
+            'applied_latency_ms': 1000.0 * float(np.mean(col('mean_applied_latency_sec'))),
+            'cbf_delay_bound_ms': 1000.0 * cfg.effective_cbf_delay_bound() if cfg.use_cbf else 0.0,
         }
         summary_table_rows.append(cond_summary)
 
         raw_campaign_data[cond_name] = {
-            'config': {
-                'use_resilient': cfg.use_resilient,
-                'use_huber': cfg.use_huber,
-                'use_ema': cfg.use_ema,
-                'use_heartbeat': cfg.use_heartbeat,
-                'use_cbf': cfg.use_cbf,
-                'use_apf': cfg.use_apf,
-                'drop_rate': cfg.drop_rate,
-                'delay_sec': cfg.delay_sec,
-            },
+            'config': asdict(cfg),
             'summary': cond_summary,
             'seed_results': seed_results,
         }
 
         print(
-            f' Done. Shape Err: {stats_shape["mean"]:.3f}m | '
-            f'Min Dist: {stats_min_dist["mean"]:.3f}m | '
-            f'Safety: {safe_rate:.1f}%'
+            f' Done. Converged: {conv_rate:.0f}% | Shape Err: {stats_shape["mean"]:.3f}m | '
+            f'Min Dist: {stats_min_dist["mean"]:.3f}m | Collision-free: {safe_rate:.0f}%'
         )
 
     # Export CSV summary

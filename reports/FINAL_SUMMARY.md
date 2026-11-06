@@ -10,6 +10,54 @@
 
 ---
 
+> ## ⚠️ Erratum (2026-11-07): M8 campaign results replaced
+>
+> An independent code review found that the original 325-run M8 campaign did not support its headline claims:
+>
+> 1. **Latency was never applied.** `delay_sec` only widened the CBF safety margin; no peer measurement was delayed, and `jitter_sec` was unused. The "safe under 200 ms delay" result therefore tested a bigger margin, not delay.
+> 2. **The "47.2% energy reduction" came from deadlock.** In that data the CBF-QP stack reached the formation in only 36% of runs (full stack: 12%; delay sweep: 0–4%). Robots that stop use little energy. The "energy" metric also added linear and angular speeds and was not in joules.
+> 3. **The campaign EKF was not an EKF.** Each step it pulled the estimate 5% toward ground truth.
+> 4. **The ablations did not isolate components.** They used APF while the full stack used CBF. "Heartbeat only" produced byte-identical results to "APF only".
+> 5. **The CBF was unsound for unicycles, and its solver could pick infeasible points.** It used a single-integrator barrier whose output was converted to (v, ω), and a soft-penalty candidate selection returned constraint-violating velocities in about 0.8% of feasible problems.
+>
+> **Fixes:** a look-ahead CBF with an exact solver and deadlock breaking (`cbf_qp.py`), and a campaign simulator that mirrors the ROS pipeline (`campaign_simulator.py`): applied drop, delay and jitter, the real `RobotEKF`, and the same controller and filter code as the nodes. The new campaign uses leave-one-out ablations and 16 conditions × 25 seeds. The tests now require the formation to actually form, not only collision avoidance. The APF closing-velocity damping sign was also fixed.
+>
+> **The tables and claims further down this document are from the superseded campaign and are kept only for traceability.** The current numbers are in `results/M8/campaign_summary.csv` and in the table below.
+>
+> **Still not validated:** none of the fixes has been run in Gazebo yet. Every Gazebo run committed before this erratum that used the safety layer ended without reaching the formation.
+
+### Current M8 results (400 runs, 25 seeds × 16 conditions)
+
+| Condition | Reached formation | Final shape error (m), mean [95% CI] | Min distance (m), mean / worst | Collision-free | Path length (m) | Est. error (m) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Unshielded consensus (clean) | 100% | 0.009 [0.007, 0.011] | 0.140 / 0.071 | 0% | 22.0 | 0.004 |
+| APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
+| CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
+| Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
+| Full stack, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
+| Full stack without Huber, impaired | 100% | 0.255 [0.228, 0.282] | 1.116 / 0.975 | 100% | 55.9 | 0.025 |
+| Full stack without EMA, impaired | 100% | 0.226 [0.197, 0.255] | 1.036 / 0.938 | 100% | 51.3 | 0.023 |
+| Full stack without heartbeat, impaired | 92% | 0.220 [0.196, 0.243] | 1.025 / 0.942 | 100% | 56.8 | 0.024 |
+| CBF only (no resilience), impaired | 100% | 0.211 [0.188, 0.234] | 1.110 / 0.928 | 100% | 50.8 | 0.023 |
+| Full stack, 15% drop | 100% | 0.053 [0.047, 0.060] | 0.765 / 0.660 | 100% | 37.7 | 0.005 |
+| Full stack, 30% drop | 100% | 0.099 [0.086, 0.113] | 0.766 / 0.644 | 100% | 49.3 | 0.005 |
+| Full stack, 50% drop | 100% | 0.214 [0.184, 0.244] | 0.759 / 0.614 | 100% | 64.0 | 0.006 |
+| Full stack, 50 ms delay (matched margin) | 100% | 0.162 [0.144, 0.180] | 0.873 / 0.820 | 100% | 47.6 | 0.013 |
+| Full stack, 100 ms delay (matched margin) | 100% | 0.222 [0.194, 0.250] | 0.976 / 0.912 | 100% | 55.1 | 0.023 |
+| Full stack, 200 ms delay (matched margin) | 32% | 0.287 [0.265, 0.310] | 1.208 / 1.158 | 100% | 53.5 | 0.039 |
+| Full stack, 200 ms delay (fixed 50 ms margin) | 8% | 0.318 [0.299, 0.336] | 0.870 / 0.802 | 100% | 57.5 | 0.042 |
+
+**What the data supports:**
+- **Safety:** every CBF and APF run, in all 15 conditions with avoidance, stayed above the 0.50 m collision limit. The worst case was 0.614 m (full stack, 50% drop). Without avoidance, every run collided.
+- **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
+- **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
+- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.802 m). Formation accuracy does not: at 200 ms, only 32% of runs reach the formation (8% with the fixed margin). The stack works to about 100 ms of delay.
+- **Packet loss:** the formation still forms at 50% drop, but final error rises from 0.009 m to 0.214 m.
+- **Resilience components:** under nominal impairment none of them measurably helps. CBF without Huber, EMA or heartbeat does as well (0.211 m vs 0.220 m, overlapping CIs). Removing the heartbeat changes nothing at all: the network node keeps republishing a stale measurement for 1.5 s, longer than the 1.2 s heartbeat timeout, so the timeout never fires. The same is true in the ROS nodes.
+- **Under impairment**, final shape error (about 0.22 m) sits close to the 0.25 m threshold, so "reached formation" there means the robots touched the threshold, not that they settled well inside it.
+
+---
+
 ## 1. Project Goal & Code Gap Resolution
 
 The project goal was to transition an initial monolithic prototype into a modular, production-grade, decentralized multi-robot (5 robots) pentagon formation control system operating in a collapsed-building disaster arena (`collapsed_building.sdf`).

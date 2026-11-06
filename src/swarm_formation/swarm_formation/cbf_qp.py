@@ -30,8 +30,6 @@ from dataclasses import dataclass
 import math
 from typing import Dict, List, Optional, Tuple
 
-from .kinematics import compute_unicycle_twist
-
 
 @dataclass
 class CBFConstraint:
@@ -153,132 +151,107 @@ def build_obstacle_cbf_constraints(
     return constraints
 
 
+def _max_violation(u_x: float, u_y: float, constraints: List[CBFConstraint]) -> float:
+    """Return the largest constraint violation a^T u - b (0.0 if all are satisfied)."""
+    worst = 0.0
+    for c in constraints:
+        viol = c.a_x * u_x + c.a_y * u_y - c.b
+        if viol > worst:
+            worst = viol
+    return worst
+
+
 def solve_2d_cbf_qp(
     u_des: Tuple[float, float],
     constraints: List[CBFConstraint],
     max_speed: float = 1.4,
+    feas_tol: float = 1e-6,
 ) -> Tuple[float, float, float]:
     """
-    Solve 2D Quadratic Program finding minimal-correction velocity subject to CBF constraints.
+    Solve the 2D minimal-correction QP exactly by active-set enumeration.
 
-    min_{u in R^2, delta >= 0} 1/2 ||u - u_des||^2 + (W_slack / 2) * delta^2
-    subject to:
-      a_k^T u <= b_k + delta,  forall k
-      ||u|| <= max_speed
+    min_u 1/2 ||u - u_des||^2
+    subject to a_k^T u <= b_k for all k, and ||u|| <= max_speed.
+
+    In 2D the projection onto (polygon intersected with a disk) lies at u_des itself,
+    on one constraint line, at a vertex of two lines, or where a line meets the speed
+    circle. All such candidates are enumerated and the cheapest feasible one is
+    returned. Only when no feasible point exists (e.g. the robot already starts inside
+    a barrier) is the least-violating candidate returned, with its violation as slack.
 
     :param u_des: Desired nominal velocity vector (u_x, u_y).
-    :param constraints: List of active linear CBF constraints.
+    :param constraints: List of linear CBF constraints.
     :param max_speed: Kinematic velocity saturation limit.
-    :return: Tuple of (safe_u_x, safe_u_y, slack_delta).
+    :param feas_tol: Tolerance used to accept a candidate as feasible.
+    :return: Tuple of (safe_u_x, safe_u_y, slack) where slack is the residual violation.
     """
     u0_x, u0_y = u_des
-
-    # Clip desired input to maximum speed
     speed0 = math.hypot(u0_x, u0_y)
     if speed0 > max_speed:
         u0_x = (u0_x / speed0) * max_speed
         u0_y = (u0_y / speed0) * max_speed
 
-    if not constraints:
+    if not constraints or _max_violation(u0_x, u0_y, constraints) <= feas_tol:
         return u0_x, u0_y, 0.0
 
-    # 1. Check if unconstrained candidate u0 satisfies all constraints
-    is_u0_feasible = True
-    for c in constraints:
-        val = c.a_x * u0_x + c.a_y * u0_y
-        if val > c.b + 1e-5:
-            is_u0_feasible = False
-            break
+    r_sq = max_speed * max_speed + 1e-9
+    candidates: List[Tuple[float, float]] = [(0.0, 0.0)]
 
-    if is_u0_feasible:
-        return u0_x, u0_y, 0.0
-
-    # 2. Candidate collection: solutions on constraint boundary lines
-    # Candidate point = (u_x, u_y, cost, slack_violation)
-    candidates: List[Tuple[float, float, float, float]] = []
-
-    # Projection of u0 onto single constraint line a_i^T u = b_i
     for c in constraints:
         norm_a_sq = c.a_x * c.a_x + c.a_y * c.a_y
-        if norm_a_sq < 1e-8:
+        if norm_a_sq < 1e-12:
             continue
+        # Orthogonal projection of u0 onto the line a^T u = b
+        diff = (c.a_x * u0_x + c.a_y * u0_y - c.b) / norm_a_sq
+        px, py = u0_x - diff * c.a_x, u0_y - diff * c.a_y
+        if px * px + py * py <= r_sq:
+            candidates.append((px, py))
+        # Intersections of the line with the speed circle ||u|| = max_speed
+        foot_x, foot_y = c.b * c.a_x / norm_a_sq, c.b * c.a_y / norm_a_sq
+        foot_sq = foot_x * foot_x + foot_y * foot_y
+        if foot_sq <= r_sq:
+            half_chord = math.sqrt(max(0.0, max_speed * max_speed - foot_sq))
+            inv_norm = 1.0 / math.sqrt(norm_a_sq)
+            tx, ty = -c.a_y * inv_norm, c.a_x * inv_norm
+            candidates.append((foot_x + half_chord * tx, foot_y + half_chord * ty))
+            candidates.append((foot_x - half_chord * tx, foot_y - half_chord * ty))
 
-        dot = c.a_x * u0_x + c.a_y * u0_y
-        diff = dot - c.b
-        # Orthogonal projection onto hyperplane
-        proj_x = u0_x - (diff / norm_a_sq) * c.a_x
-        proj_y = u0_y - (diff / norm_a_sq) * c.a_y
-
-        # Clip speed if exceeds maximum
-        sp = math.hypot(proj_x, proj_y)
-        if sp > max_speed:
-            proj_x = (proj_x / sp) * max_speed
-            proj_y = (proj_y / sp) * max_speed
-
-        # Check maximum violation across all constraints
-        max_viol = 0.0
-        for other in constraints:
-            viol = other.a_x * proj_x + other.a_y * proj_y - other.b
-            if viol > max_viol:
-                max_viol = viol
-
-        cost = (proj_x - u0_x) ** 2 + (proj_y - u0_y) ** 2
-        candidates.append((proj_x, proj_y, cost, max_viol))
-
-    # Intersection of pairs of constraint lines: a_i^T u = b_i and a_j^T u = b_j
     m = len(constraints)
     for i in range(m):
         ci = constraints[i]
         for j in range(i + 1, m):
             cj = constraints[j]
             det = ci.a_x * cj.a_y - ci.a_y * cj.a_x
-            if abs(det) < 1e-6:
+            if abs(det) < 1e-9:
                 continue
+            ix = (ci.b * cj.a_y - ci.a_y * cj.b) / det
+            iy = (ci.a_x * cj.b - ci.b * cj.a_x) / det
+            if ix * ix + iy * iy <= r_sq:
+                candidates.append((ix, iy))
 
-            ix_x = (ci.b * cj.a_y - ci.a_y * cj.b) / det
-            ix_y = (ci.a_x * cj.b - ci.b * cj.a_x) / det
+    best_feasible: Optional[Tuple[float, float]] = None
+    best_cost = float('inf')
+    least_viol_pt = (0.0, 0.0)
+    least_viol = float('inf')
+    least_viol_cost = float('inf')
 
-            sp = math.hypot(ix_x, ix_y)
-            if sp > max_speed:
-                ix_x = (ix_x / sp) * max_speed
-                ix_y = (ix_y / sp) * max_speed
+    for cx, cy in candidates:
+        viol = _max_violation(cx, cy, constraints)
+        cost = (cx - u0_x) ** 2 + (cy - u0_y) ** 2
+        if viol <= feas_tol:
+            if cost < best_cost:
+                best_cost = cost
+                best_feasible = (cx, cy)
+        elif viol < least_viol - 1e-12 or (
+            abs(viol - least_viol) <= 1e-12 and cost < least_viol_cost
+        ):
+            least_viol = viol
+            least_viol_cost = cost
+            least_viol_pt = (cx, cy)
 
-            max_viol = 0.0
-            for other in constraints:
-                viol = other.a_x * ix_x + other.a_y * ix_y - other.b
-                if viol > max_viol:
-                    max_viol = viol
-
-            cost = (ix_x - u0_x) ** 2 + (ix_y - u0_y) ** 2
-            candidates.append((ix_x, ix_y, cost, max_viol))
-
-    # Zero velocity fallback (stopping)
-    max_viol_zero = 0.0
-    for other in constraints:
-        viol = -other.b
-        if viol > max_viol_zero:
-            max_viol_zero = viol
-    cost_zero = u0_x * u0_x + u0_y * u0_y
-    candidates.append((0.0, 0.0, cost_zero, max_viol_zero))
-
-    # 3. Select optimal candidate:
-    # First priority: minimize constraint violation (slack delta)
-    # Second priority: minimize deviation from desired control
-    w_slack = 1000.0
-    best_candidate: Optional[Tuple[float, float, float]] = None
-    best_total_cost = float('inf')
-
-    for cand_x, cand_y, cost, viol in candidates:
-        slack = max(0.0, viol)
-        total_cost = cost + w_slack * (slack ** 2)
-        if total_cost < best_total_cost:
-            best_total_cost = total_cost
-            best_candidate = (cand_x, cand_y, slack)
-
-    if best_candidate is not None:
-        return best_candidate
-
-    return 0.0, 0.0, 0.0
+    if best_feasible is not None:
+        return best_feasible[0], best_feasible[1], 0.0
+    return least_viol_pt[0], least_viol_pt[1], least_viol
 
 
 def compute_cbf_safe_twist(
@@ -295,14 +268,24 @@ def compute_cbf_safe_twist(
     max_linear_vel: float = 1.4,
     max_angular_vel: float = 3.0,
     yaw_gain_kyaw: float = 4.0,
+    lookahead_dist: float = 0.15,
+    deadlock_bias: float = 0.5,
+    deadlock_band: float = 0.5,
 ) -> Tuple[float, float, float]:
     """
-    Filter unicycle velocity command using Control Barrier Function Quadratic Program.
+    Filter a unicycle velocity command with a CBF-QP on a look-ahead point.
+
+    A unicycle cannot move sideways, so a barrier written for a single integrator no
+    longer holds once its output is converted back to (v, w). Instead the barrier is
+    placed on the look-ahead point q = p + l [cos(yaw), sin(yaw)], whose velocity
+    q_dot = R(yaw) diag(1, l) [v, w]^T is fully actuated. The QP result for q_dot is
+    mapped back to (v, w) exactly, so the inequality the QP enforces is the one the
+    robot executes. Keeping ||p_j - q_i|| >= D + l implies ||p_j - p_i|| >= D.
 
     :param v_raw: Raw commanded forward linear speed from controller.
     :param w_raw: Raw commanded angular yaw velocity from controller.
     :param robot_yaw: Current estimated robot heading in radians.
-    :param relative_peers: Dict of peer_id -> (dx, dy) relative displacements.
+    :param relative_peers: Dict of peer_id -> (dx, dy) center-to-center displacements.
     :param relative_obstacles: List of (ox, oy, radius) obstacle detections.
     :param safety_dist_peer: Minimum peer distance threshold in meters.
     :param safety_dist_obs: Minimum obstacle distance threshold in meters.
@@ -311,53 +294,90 @@ def compute_cbf_safe_twist(
     :param delay_bound_sec: Communication delay bound for margin expansion.
     :param max_linear_vel: Actuator forward speed limit.
     :param max_angular_vel: Actuator yaw velocity limit.
-    :param yaw_gain_kyaw: Kinematic unicycle orientation tracking gain.
+    :param yaw_gain_kyaw: Unused; kept for backward-compatible call signatures.
+    :param lookahead_dist: Look-ahead offset l in meters (> 0).
+    :param deadlock_bias: Gain of the right-hand-rule tangential bias added to the nominal
+        command when it violates a barrier (0 disables). Symmetric multi-robot CBF filters
+        are known to deadlock; a common turning direction breaks the symmetry. The bias
+        only changes the *nominal* input, so the barrier guarantee is unaffected.
+    :param deadlock_band: Distance beyond the effective barrier radius over which the
+        bias fades out, in meters.
     :return: Tuple of (safe_v, safe_w, intervention_norm).
     """
-    # 1. Convert unicycle twist to 2D reference frame translation vector
-    u0_x = v_raw * math.cos(robot_yaw)
-    u0_y = v_raw * math.sin(robot_yaw)
+    del yaw_gain_kyaw
+    ell = max(1e-3, lookahead_dist)
+    cos_h = math.cos(robot_yaw)
+    sin_h = math.sin(robot_yaw)
 
-    # 2. Build barrier constraints
+    # 1. Look-ahead point velocity produced by the raw command
+    u0_x = v_raw * cos_h - ell * w_raw * sin_h
+    u0_y = v_raw * sin_h + ell * w_raw * cos_h
+
+    # 2. Barrier constraints written relative to the look-ahead point
+    peers_from_q = {
+        pid: (dx - ell * cos_h, dy - ell * sin_h) for pid, (dx, dy) in relative_peers.items()
+    }
+    obstacles_from_q = [
+        (ox - ell * cos_h, oy - ell * sin_h, orad) for ox, oy, orad in relative_obstacles
+    ]
     peer_constraints = build_peer_cbf_constraints(
-        relative_peers=relative_peers,
-        safety_distance=safety_dist_peer,
+        relative_peers=peers_from_q,
+        safety_distance=safety_dist_peer + ell,
         gamma=gamma_peer,
         delay_bound_sec=delay_bound_sec,
         max_linear_vel=max_linear_vel,
     )
     obs_constraints = build_obstacle_cbf_constraints(
-        relative_obstacles=relative_obstacles,
+        relative_obstacles=obstacles_from_q,
         robot_radius=0.20,
-        safety_margin=max(0.0, safety_dist_obs - 0.20),
+        safety_margin=max(0.0, safety_dist_obs - 0.20) + ell,
         gamma_obs=gamma_obs,
         delay_bound_sec=delay_bound_sec,
         max_linear_vel=max_linear_vel,
     )
     all_constraints = peer_constraints + obs_constraints
 
-    # 3. Solve 2D CBF-QP
+    # 3. Deadlock breaking: if the nominal command pushes into a barrier, add a
+    #    tangential component (all robots turn the same way, like a roundabout).
+    nom_x, nom_y = u0_x, u0_y
+    speed_nom = math.hypot(u0_x, u0_y)
+    if (
+        deadlock_bias > 0.0
+        and speed_nom > 1e-6
+        and peer_constraints
+        and _max_violation(u0_x, u0_y, peer_constraints) > 0.0
+    ):
+        d_eff = safety_dist_peer + ell + 2.0 * max_linear_vel * delay_bound_sec
+        for (qx, qy) in peers_from_q.values():
+            dist = math.hypot(qx, qy)
+            if dist < 1e-6:
+                continue
+            weight = (d_eff + deadlock_band - dist) / max(deadlock_band, 1e-6)
+            weight = min(1.0, max(0.0, weight))
+            if weight <= 0.0:
+                continue
+            # Unit vector toward the peer rotated -90 deg: every robot veers to its right
+            nom_x += deadlock_bias * speed_nom * weight * (qy / dist)
+            nom_y += deadlock_bias * speed_nom * weight * (-qx / dist)
+
+    # 4. Exact 2D QP on the look-ahead velocity
     safe_ux, safe_uy, _ = solve_2d_cbf_qp(
-        u_des=(u0_x, u0_y),
+        u_des=(nom_x, nom_y),
         constraints=all_constraints,
         max_speed=max_linear_vel,
     )
 
-    # 4. Measure filter intervention magnitude
     intervention_norm = math.hypot(safe_ux - u0_x, safe_uy - u0_y)
-
-    # 5. Map filtered translation vector back to unicycle twist
-    # If no intervention occurred and raw inputs were valid, preserve raw inputs
-    if intervention_norm < 1e-4:
+    if intervention_norm < 1e-6:
         return v_raw, w_raw, 0.0
 
-    safe_v, safe_w = compute_unicycle_twist(
-        fx=safe_ux,
-        fy=safe_uy,
-        current_yaw=robot_yaw,
-        k_yaw=yaw_gain_kyaw,
-        max_lin_vel=max_linear_vel,
-        max_ang_vel=max_angular_vel,
-    )
+    # 5. Exact inverse map q_dot -> (v, w); uniform scaling keeps a^T u <= b when b >= 0
+    safe_v = cos_h * safe_ux + sin_h * safe_uy
+    safe_w = (-sin_h * safe_ux + cos_h * safe_uy) / ell
+    scale = 1.0
+    if abs(safe_v) > max_linear_vel:
+        scale = min(scale, max_linear_vel / abs(safe_v))
+    if abs(safe_w) > max_angular_vel:
+        scale = min(scale, max_angular_vel / abs(safe_w))
 
-    return safe_v, safe_w, intervention_norm
+    return safe_v * scale, safe_w * scale, intervention_norm

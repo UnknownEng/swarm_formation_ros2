@@ -26,6 +26,8 @@ import rclpy.serialization
 from rosidl_runtime_py.utilities import get_message
 import yaml
 
+from .formation_metrics import compute_procrustes_error
+
 try:
     import rosbag2_py
 except ImportError:
@@ -183,45 +185,7 @@ class RosbagProcessor:
         total_robots: int = 5,
     ) -> float:
         """Calculate Procrustes RMS shape error aligned to regular polygon of given radius."""
-        if len(positions) < total_robots:
-            return float('nan')
-
-        sum_x = sum(p[0] for p in positions[:total_robots])
-        sum_y = sum(p[1] for p in positions[:total_robots])
-        cx = sum_x / total_robots
-        cy = sum_y / total_robots
-
-        target_pts = [
-            (
-                radius * math.cos(2.0 * math.pi * i / total_robots),
-                radius * math.sin(2.0 * math.pi * i / total_robots),
-            )
-            for i in range(total_robots)
-        ]
-
-        # Calculate optimal rotation alignment angle (Procrustes)
-        num = sum(
-            (positions[i][0] - cx) * target_pts[i][1]
-            - (positions[i][1] - cy) * target_pts[i][0]
-            for i in range(total_robots)
-        )
-        den = sum(
-            (positions[i][0] - cx) * target_pts[i][0]
-            + (positions[i][1] - cy) * target_pts[i][1]
-            for i in range(total_robots)
-        )
-        theta_align = math.atan2(num, den)
-
-        sq_err_sum = 0.0
-        for i in range(total_robots):
-            u = positions[i][0] - cx
-            v = positions[i][1] - cy
-            rot_u = u * math.cos(theta_align) - v * math.sin(theta_align)
-            rot_v = u * math.sin(theta_align) + v * math.cos(theta_align)
-            tx, ty = target_pts[i]
-            sq_err_sum += (rot_u - tx) ** 2 + (rot_v - ty) ** 2
-
-        return math.sqrt(sq_err_sum / total_robots)
+        return compute_procrustes_error(positions, radius, total_robots)
 
     def compute_metrics(self, dt: float = 0.05) -> Dict[str, Any]:
         """Resample time-series data at regular intervals dt and compute all swarm metrics."""

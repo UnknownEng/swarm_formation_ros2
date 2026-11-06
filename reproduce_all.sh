@@ -46,7 +46,7 @@ source "${SCRIPT_DIR}/install/setup.bash"
 
 # Step 3: Regression Test Suite
 echo ">> [STEP 3/6] Running regression and acceptance test suite..."
-timeout 180 pytest-3 "${SCRIPT_DIR}/src/swarm_formation/test" -v
+timeout 900 pytest-3 "${SCRIPT_DIR}/src/swarm_formation/test" -v
 
 # Prepare Reproduction Output Directories
 REPRO_DIR="${SCRIPT_DIR}/results/reproduction"
@@ -88,10 +88,10 @@ else
 fi
 
 # Step 6: Execute Statistical Campaign & Generate All 4 Main Figures
-echo ">> [STEP 6/6] Executing multi-seed campaign (13 conditions x 25 seeds = 325 runs)..."
-timeout 300 ros2 run swarm_formation run_campaign \
+echo ">> [STEP 6/6] Executing multi-seed campaign (16 conditions x 25 seeds = 400 runs)..."
+timeout 1800 ros2 run swarm_formation run_campaign \
     --seeds 25 \
-    --duration 25.0 \
+    --duration 30.0 \
     --output-dir "${CAMPAIGN_DIR}"
 
 echo ">> Generating master publication figures from campaign results..."
