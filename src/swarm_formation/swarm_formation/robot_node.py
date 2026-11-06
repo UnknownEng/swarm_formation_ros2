@@ -45,6 +45,7 @@ class GazeboSwarmNode(Node):
         self.declare_parameter('total_robots', 5)
         self.declare_parameter('enable_faults', False)
         self.declare_parameter('use_resilient_method', False)
+        self.declare_parameter('use_safety_filter', True)
         self.declare_parameter('controller_type', 'displacement')
         self.declare_parameter('formation_radius', 2.0)
         self.declare_parameter('control_rate', 50.0)
@@ -78,6 +79,7 @@ class GazeboSwarmNode(Node):
         self.total_robots = int(self.get_parameter('total_robots').value)
         self.enable_faults = bool(self.get_parameter('enable_faults').value)
         self.use_resilient_method = bool(self.get_parameter('use_resilient_method').value)
+        self.use_safety_filter = bool(self.get_parameter('use_safety_filter').value)
         self.controller_type = str(self.get_parameter('controller_type').value)
         self.controller = create_controller(self.controller_type)
         self.radius = float(self.get_parameter('formation_radius').value)
@@ -135,9 +137,12 @@ class GazeboSwarmNode(Node):
         )
 
         # ROS 2 Topics
-        self.pub_cmd_vel = self.create_publisher(
-            Twist, f'/robot_{self.robot_id}/cmd_vel', 10
+        cmd_topic = (
+            f'/robot_{self.robot_id}/cmd_vel_raw'
+            if self.use_safety_filter
+            else f'/robot_{self.robot_id}/cmd_vel'
         )
+        self.pub_cmd_vel = self.create_publisher(Twist, cmd_topic, 10)
         self.sub_motor_kill = self.create_subscription(
             Bool, f'/robot_{self.robot_id}/motor_kill', self._motor_kill_callback, 10
         )

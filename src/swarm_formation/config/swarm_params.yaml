@@ -48,6 +48,15 @@
     obs_damping_gain: 0.8
     obs_tangent_ratio: 1.0
 
+    # Control Barrier Function (CBF-QP) Safety Layer (M6)
+    use_safety_filter: true
+    safety_dist_peer: 0.55
+    safety_dist_obs: 0.35
+    cbf_gamma_peer: 1.5
+    cbf_gamma_obs: 2.0
+    delay_bound_sec: 0.05
+    filter_rate: 50.0
+
     # Fault Injection Parameters
     fault_packet_loss_rate: 0.15
     fault_noise_std: 0.18

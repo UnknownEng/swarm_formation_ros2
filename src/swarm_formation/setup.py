@@ -57,6 +57,7 @@ setup(
             'network_impairment = swarm_formation.network_impairment_node:main',
             'fault_injector = swarm_formation.fault_injector_node:main',
             'localization_node = swarm_formation.localization_node:main',
+            'safety_filter = swarm_formation.safety_filter_node:main',
             'metrics_logger = swarm_formation.metrics_logger:main',
         ],
     },

@@ -51,10 +51,12 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     params_file_arg = LaunchConfiguration('params_file').perform(context)
     fault_profile_arg = LaunchConfiguration('fault_profile').perform(context)
     controller_type_str = LaunchConfiguration('controller_type').perform(context).lower()
+    use_safety_filter_str = LaunchConfiguration('use_safety_filter').perform(context).lower()
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
     use_resilient = use_resilient_str in ['true', '1', 'yes']
+    use_safety_filter = use_safety_filter_str in ['true', '1', 'yes']
     radius = float(radius_str)
     sensing_range = float(sensing_range_str)
     sim_duration = float(sim_duration_str)
@@ -176,6 +178,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             'total_robots': total_robots,
             'enable_faults': enable_faults,
             'use_resilient_method': use_resilient,
+            'use_safety_filter': use_safety_filter,
             'controller_type': controller_type_str,
             'formation_radius': radius,
             'sensing_range': sensing_range,
@@ -218,6 +221,17 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             parameters=node_params,
         )
         actions.append(controller_node)
+
+        # Standalone Control Barrier Function (CBF-QP) Safety Filter Layer (M6)
+        if use_safety_filter:
+            filter_node = Node(
+                package='swarm_formation',
+                executable='safety_filter',
+                name=f'safety_filter_{i}',
+                output='screen',
+                parameters=node_params,
+            )
+            actions.append(filter_node)
 
     # 3. Standalone Network Impairment Node (M2)
     default_drop = 0.15 if enable_faults else 0.0
@@ -363,6 +377,11 @@ def generate_launch_description() -> LaunchDescription:
             'controller_type',
             default_value='displacement',
             description='Swarm controller family: displacement, distance, bearing.',
+        ),
+        DeclareLaunchArgument(
+            'use_safety_filter',
+            default_value='true',
+            description='Enable standalone Control Barrier Function (CBF-QP) safety filter.',
         ),
     ]
 
