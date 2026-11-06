@@ -170,7 +170,30 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         )
         actions.append(controller_node)
 
-    # 3. Consolidated Parameter Bridge Node
+    # 3. Standalone Network Impairment Node (M2)
+    default_drop = 0.15 if enable_faults else 0.0
+    default_delay = 0.08 if enable_faults else 0.0
+    default_jitter = 0.04 if enable_faults else 0.0
+
+    network_node = Node(
+        package='swarm_formation',
+        executable='network_impairment',
+        name='network_impairment',
+        output='screen',
+        parameters=[
+            params_file,
+            {
+                'total_robots': total_robots,
+                'default_drop_rate': default_drop,
+                'default_delay_sec': default_delay,
+                'default_jitter_sec': default_jitter,
+                'enable_faults': enable_faults,
+            },
+        ],
+    )
+    actions.append(network_node)
+
+    # 4. Consolidated Parameter Bridge Node
     bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',

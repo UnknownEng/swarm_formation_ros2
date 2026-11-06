@@ -13,6 +13,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/NeighborMeasurement.msg"
   "msg/ObstacleMeasurement.msg"
   "msg/NeighborList.msg"
+  "msg/LinkState.msg"
+  "msg/NetworkStatus.msg"
+  "srv/SetLinkState.srv"
   DEPENDENCIES std_msgs
 )
 

@@ -39,6 +39,7 @@ class NeighborSensorNode(Node):
         self.declare_parameter('range_noise_std', 0.0)
         self.declare_parameter('bearing_noise_std', 0.0)
         self.declare_parameter('sensor_rate', 20.0)
+        self.declare_parameter('output_topic', '')
 
         self.robot_id = int(self.get_parameter('robot_id').value)
         self.total_robots = int(self.get_parameter('total_robots').value)
@@ -46,6 +47,9 @@ class NeighborSensorNode(Node):
         self.range_noise_std = float(self.get_parameter('range_noise_std').value)
         self.bearing_noise_std = float(self.get_parameter('bearing_noise_std').value)
         self.sensor_rate = float(self.get_parameter('sensor_rate').value)
+        output_topic = str(self.get_parameter('output_topic').value)
+        if not output_topic:
+            output_topic = f'/robot_{self.robot_id}/neighbors_raw'
 
         self.rng = random.Random(42 + self.robot_id)
 
@@ -70,7 +74,7 @@ class NeighborSensorNode(Node):
 
         # Publisher for onboard relative measurements
         self.pub_neighbors = self.create_publisher(
-            NeighborList, f'/robot_{self.robot_id}/neighbors', 10
+            NeighborList, output_topic, 10
         )
 
         # Subscriptions to ground truth poses from simulation environment

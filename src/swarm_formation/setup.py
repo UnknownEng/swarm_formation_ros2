@@ -48,6 +48,7 @@ setup(
             'gazebo_node = swarm_formation.gazebo_node:main',
             'robot_node = swarm_formation.robot_node:main',
             'neighbor_sensor = swarm_formation.neighbor_sensor_node:main',
+            'network_impairment = swarm_formation.network_impairment_node:main',
             'metrics_logger = swarm_formation.metrics_logger:main',
         ],
     },

@@ -15,6 +15,12 @@
     bearing_noise_std: 0.0
     sensor_rate: 20.0
 
+    # Standalone Network Impairment Channel (M2)
+    default_drop_rate: 0.0
+    default_delay_sec: 0.0
+    default_jitter_sec: 0.0
+    network_rate: 50.0
+
     # Consensus Gains
     linear_gain_kp: 1.8
     damping_gain_kd: 0.5
