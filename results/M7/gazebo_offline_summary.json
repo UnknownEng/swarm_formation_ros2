@@ -1,0 +1,20 @@
+{
+  "bag_path": "/home/kali/swarm_ws/results/M7/gazebo_swarm_bag",
+  "total_robots": 5,
+  "formation_radius": 2.0,
+  "convergence_threshold": 0.25,
+  "settle_duration": 2.0,
+  "collision_threshold": 0.5,
+  "total_duration_sec": 42.240703906,
+  "final_shape_error_rms": 0.4124351618043582,
+  "min_shape_error_rms": 0.4124351618043582,
+  "global_min_distance": 0.8495130152207553,
+  "total_collisions": 0,
+  "is_converged": false,
+  "convergence_time_sec": null,
+  "mean_est_error": 0.06235559567684642,
+  "max_est_error": 0.2235229871069484,
+  "empirically_collision_free": true,
+  "total_control_energy": 978.2091862877894,
+  "total_safety_interventions": 1709.8049802807436
+}

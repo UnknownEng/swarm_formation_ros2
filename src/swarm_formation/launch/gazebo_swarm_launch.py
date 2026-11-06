@@ -15,12 +15,14 @@
 """Launch Gazebo Harmonic physics simulation, spawn 5 physical robots, and launch swarm nodes."""
 
 import os
+import time
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchContext, LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
+    ExecuteProcess,
     IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
@@ -52,11 +54,14 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     fault_profile_arg = LaunchConfiguration('fault_profile').perform(context)
     controller_type_str = LaunchConfiguration('controller_type').perform(context).lower()
     use_safety_filter_str = LaunchConfiguration('use_safety_filter').perform(context).lower()
+    record_bag_str = LaunchConfiguration('record_bag').perform(context).lower()
+    bag_path_arg = LaunchConfiguration('bag_path').perform(context)
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
     use_resilient = use_resilient_str in ['true', '1', 'yes']
     use_safety_filter = use_safety_filter_str in ['true', '1', 'yes']
+    record_bag = record_bag_str in ['true', '1', 'yes']
     radius = float(radius_str)
     sensing_range = float(sensing_range_str)
     sim_duration = float(sim_duration_str)
@@ -301,7 +306,45 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     )
     actions.append(TimerAction(period=3.5, actions=[metrics_node]))
 
-    # 5. Clean Shutdown on Metrics Completion
+    # 5. Standalone rosbag2 Recorder Process (M7)
+    if record_bag:
+        bag_out = bag_path_arg if bag_path_arg else f'bags/swarm_bag_{int(time.time())}'
+        topics_to_record = [
+            '/clock',
+            '/swarm/network_status',
+            '/swarm/fault_status',
+        ]
+        for i in range(1, total_robots + 1):
+            topics_to_record.extend([
+                f'/robot_{i}/pose',
+                f'/robot_{i}/odom',
+                f'/robot_{i}/cmd_vel',
+                f'/robot_{i}/cmd_vel_raw',
+                f'/robot_{i}/estimated_pose',
+                f'/robot_{i}/estimation_error',
+                f'/robot_{i}/safety_intervention',
+                f'/robot_{i}/neighbors',
+                f'/robot_{i}/obstacles',
+            ])
+        bag_cmd = [
+            'ros2', 'bag', 'record',
+            '-o', bag_out,
+            '--max-cache-size', '0',
+        ] + topics_to_record
+        actions.append(
+            TimerAction(
+                period=1.0,
+                actions=[
+                    ExecuteProcess(
+                        cmd=bag_cmd,
+                        output='screen',
+                        name='rosbag_recorder',
+                    )
+                ],
+            )
+        )
+
+    # 6. Clean Shutdown on Metrics Completion
     if sim_duration > 0.0:
         actions.append(
             RegisterEventHandler(
@@ -382,6 +425,16 @@ def generate_launch_description() -> LaunchDescription:
             'use_safety_filter',
             default_value='true',
             description='Enable standalone Control Barrier Function (CBF-QP) safety filter.',
+        ),
+        DeclareLaunchArgument(
+            'record_bag',
+            default_value='false',
+            description='Enable automatic recording of swarm topics with ros2 bag.',
+        ),
+        DeclareLaunchArgument(
+            'bag_path',
+            default_value='',
+            description='Output directory path for recorded rosbag2.',
         ),
     ]
 

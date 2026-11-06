@@ -59,6 +59,8 @@ setup(
             'localization_node = swarm_formation.localization_node:main',
             'safety_filter = swarm_formation.safety_filter_node:main',
             'metrics_logger = swarm_formation.metrics_logger:main',
+            'process_bag = swarm_formation.rosbag_processor:main',
+            'plot_bag = swarm_formation.plot_generator:main',
         ],
     },
 )
