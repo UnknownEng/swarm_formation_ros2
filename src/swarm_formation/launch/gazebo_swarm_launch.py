@@ -50,6 +50,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     world_arg = LaunchConfiguration('world').perform(context)
     params_file_arg = LaunchConfiguration('params_file').perform(context)
     fault_profile_arg = LaunchConfiguration('fault_profile').perform(context)
+    controller_type_str = LaunchConfiguration('controller_type').perform(context).lower()
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
@@ -171,6 +172,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             'total_robots': total_robots,
             'enable_faults': enable_faults,
             'use_resilient_method': use_resilient,
+            'controller_type': controller_type_str,
             'formation_radius': radius,
             'sensing_range': sensing_range,
         })
@@ -334,6 +336,11 @@ def generate_launch_description() -> LaunchDescription:
             'fault_profile',
             default_value='',
             description='Path or preset name for fault scenario YAML profile.',
+        ),
+        DeclareLaunchArgument(
+            'controller_type',
+            default_value='displacement',
+            description='Swarm controller family: displacement, distance, bearing.',
         ),
     ]
 

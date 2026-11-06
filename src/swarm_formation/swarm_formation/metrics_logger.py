@@ -130,16 +130,36 @@ class SwarmMetricsLogger(Node):
         cx = sum_x / self.total_robots
         cy = sum_y / self.total_robots
 
-        # 2. Shape Error (RMS distance from target polygon vertices)
-        sq_err_sum = 0.0
-        for i in range(1, self.total_robots + 1):
-            idx = (i - 1) % self.total_robots
-            angle = 2.0 * math.pi * idx / self.total_robots
-            target_x = cx + self.radius * math.cos(angle)
-            target_y = cy + self.radius * math.sin(angle)
+        # 2. Shape Error (Procrustes RMS distance from target polygon vertices)
+        target_pts = [
+            (
+                self.radius * math.cos(2.0 * math.pi * i / self.total_robots),
+                self.radius * math.sin(2.0 * math.pi * i / self.total_robots),
+            )
+            for i in range(self.total_robots)
+        ]
 
-            rx, ry, _ = self.robot_poses[i]
-            sq_err_sum += (rx - target_x) ** 2 + (ry - target_y) ** 2
+        # Calculate optimal rotation alignment angle (Procrustes)
+        num = sum(
+            (self.robot_poses[i + 1][0] - cx) * target_pts[i][1]
+            - (self.robot_poses[i + 1][1] - cy) * target_pts[i][0]
+            for i in range(self.total_robots)
+        )
+        den = sum(
+            (self.robot_poses[i + 1][0] - cx) * target_pts[i][0]
+            + (self.robot_poses[i + 1][1] - cy) * target_pts[i][1]
+            for i in range(self.total_robots)
+        )
+        theta_align = math.atan2(num, den)
+
+        sq_err_sum = 0.0
+        for i in range(self.total_robots):
+            u = self.robot_poses[i + 1][0] - cx
+            v = self.robot_poses[i + 1][1] - cy
+            rot_u = u * math.cos(theta_align) - v * math.sin(theta_align)
+            rot_v = u * math.sin(theta_align) + v * math.cos(theta_align)
+            tx, ty = target_pts[i]
+            sq_err_sum += (rot_u - tx) ** 2 + (rot_v - ty) ** 2
 
         shape_error = math.sqrt(sq_err_sum / self.total_robots)
 

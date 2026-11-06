@@ -23,11 +23,8 @@ from rclpy.node import Node
 from std_msgs.msg import Bool
 from swarm_interfaces.msg import NeighborList
 
-from .consensus import (
-    compute_relative_consensus,
-    compute_relative_huber_consensus,
-    compute_target_offsets,
-)
+from .consensus import compute_target_offsets
+from .controllers import create_controller
 from .kinematics import compute_unicycle_twist
 from .potential_field import (
     compute_peer_safety_scale,
@@ -48,6 +45,7 @@ class GazeboSwarmNode(Node):
         self.declare_parameter('total_robots', 5)
         self.declare_parameter('enable_faults', False)
         self.declare_parameter('use_resilient_method', False)
+        self.declare_parameter('controller_type', 'displacement')
         self.declare_parameter('formation_radius', 2.0)
         self.declare_parameter('control_rate', 50.0)
         self.declare_parameter('max_linear_vel', 1.4)
@@ -80,6 +78,8 @@ class GazeboSwarmNode(Node):
         self.total_robots = int(self.get_parameter('total_robots').value)
         self.enable_faults = bool(self.get_parameter('enable_faults').value)
         self.use_resilient_method = bool(self.get_parameter('use_resilient_method').value)
+        self.controller_type = str(self.get_parameter('controller_type').value)
+        self.controller = create_controller(self.controller_type)
         self.radius = float(self.get_parameter('formation_radius').value)
         self.control_rate = float(self.get_parameter('control_rate').value)
         self.max_lin_vel = float(self.get_parameter('max_linear_vel').value)
@@ -225,8 +225,13 @@ class GazeboSwarmNode(Node):
             rel_displacements = {
                 pid: (data[0], data[1]) for pid, data in self.relative_neighbors.items()
             }
-            fx, fy = compute_relative_consensus(
-                self.target_offsets, rel_displacements, self.k_p
+            fx, fy = self.controller.compute_control_force(
+                self.robot_id,
+                self.total_robots,
+                self.radius,
+                rel_displacements,
+                self.k_p,
+                huber_delta=100.0,
             )
 
         # Local velocity damping
@@ -289,16 +294,18 @@ class GazeboSwarmNode(Node):
                 self.filtered_relative[n_id] = (raw_dx, raw_dy, n_vx, n_vy)
                 self.last_valid_sensor_times[n_id] = curr_time
 
-        # 1. Robust Huber Consensus using relative displacements
+        # 1. Formation Control Force using selected Controller Family
         rel_pos_filtered = {
             pid: (d[0], d[1]) for pid, d in self.filtered_relative.items()
         }
-        fx_form, fy_form, _ = compute_relative_huber_consensus(
-            self.target_offsets,
+        fx_form, fy_form = self.controller.compute_control_force(
+            self.robot_id,
+            self.total_robots,
+            self.radius,
             rel_pos_filtered,
-            active_mask,
             self.k_p,
             self.huber_delta,
+            active_mask,
         )
 
         # 2. Dual-Layer APF Layer 1: Peer Repulsive Force
