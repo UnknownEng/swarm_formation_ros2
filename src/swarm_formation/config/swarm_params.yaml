@@ -9,6 +9,12 @@
     max_linear_vel: 1.4
     max_angular_vel: 3.0
 
+    # Relative Neighbor & Obstacle Sensing (M1)
+    sensing_range: 6.0
+    range_noise_std: 0.0
+    bearing_noise_std: 0.0
+    sensor_rate: 20.0
+
     # Consensus Gains
     linear_gain_kp: 1.8
     damping_gain_kd: 0.5

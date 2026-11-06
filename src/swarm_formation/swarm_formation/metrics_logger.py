@@ -19,10 +19,10 @@ import math
 import os
 from typing import Dict, Optional, Tuple
 
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Pose
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import ColorRGBA, Float32MultiArray
+from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -70,10 +70,16 @@ class SwarmMetricsLogger(Node):
         # Initialize CSV file
         self._init_csv()
 
-        # Publishers & Subscribers
-        self.sub_poses = self.create_subscription(
-            Float32MultiArray, '/robot_all_poses', self.pose_callback, 50
-        )
+        # Publishers & Subscribers (Subscribes to Gazebo ground truth for evaluation only)
+        self.pose_subs = []
+        for i in range(1, self.total_robots + 1):
+            sub = self.create_subscription(
+                Pose,
+                f'/robot_{i}/pose',
+                lambda msg, r_id=i: self._pose_callback(msg, r_id),
+                20,
+            )
+            self.pose_subs.append(sub)
         self.pub_markers = self.create_publisher(MarkerArray, '/swarm/visualization', 10)
 
         self.timer = self.create_timer(self.dt, self.metrics_loop)
@@ -104,15 +110,12 @@ class SwarmMetricsLogger(Node):
             writer = csv.writer(f)
             writer.writerow(header)
 
-    def pose_callback(self, msg: Float32MultiArray) -> None:
-        """Update robot positions from broadcast beacon messages."""
-        data = msg.data
-        if len(data) >= 3:
-            r_id = int(data[0])
-            px = float(data[1])
-            py = float(data[2])
-            curr_time = self.get_clock().now().nanoseconds * 1e-9
-            self.robot_poses[r_id] = (px, py, curr_time)
+    def _pose_callback(self, msg: Pose, robot_id: int) -> None:
+        """Update robot ground-truth positions from simulation for evaluation only."""
+        px = msg.position.x
+        py = msg.position.y
+        curr_time = self.get_clock().now().nanoseconds * 1e-9
+        self.robot_poses[robot_id] = (px, py, curr_time)
 
     def _compute_metrics(
         self,

@@ -131,3 +131,73 @@ def compute_huber_consensus(
             fy_form += k_p * err_y
 
     return fx_form, fy_form, active_neighbors
+
+
+def compute_relative_consensus(
+    target_offsets: Dict[int, Tuple[float, float]],
+    relative_displacements: Dict[int, Tuple[float, float]],
+    k_p: float,
+) -> Tuple[float, float]:
+    """
+    Compute standard linear displacement-based consensus from relative measurements.
+
+    :param target_offsets: Desired relative formation offsets to peers in reference frame.
+    :param relative_displacements: Measured relative displacements (dx, dy) to peers.
+    :param k_p: Proportional consensus gain.
+    :return: Planar formation force vector (fx, fy).
+    """
+    fx, fy = 0.0, 0.0
+    for n_id, target_offset in target_offsets.items():
+        if n_id not in relative_displacements:
+            continue
+        dx, dy = relative_displacements[n_id]
+        err_x = dx - target_offset[0]
+        err_y = dy - target_offset[1]
+        fx += k_p * err_x
+        fy += k_p * err_y
+    return fx, fy
+
+
+def compute_relative_huber_consensus(
+    target_offsets: Dict[int, Tuple[float, float]],
+    relative_displacements: Dict[int, Tuple[float, float]],
+    active_mask: Dict[int, bool],
+    k_p: float,
+    huber_delta: float = 2.0,
+    deadband: float = 0.02,
+) -> Tuple[float, float, int]:
+    """
+    Compute robust consensus using Huber loss directly on relative measurements.
+
+    :param target_offsets: Desired relative formation offsets to peers.
+    :param relative_displacements: Measured relative displacements (dx, dy) to peers.
+    :param active_mask: Boolean indicator whether each peer is active.
+    :param k_p: Proportional consensus gain.
+    :param huber_delta: Huber threshold bounding gradient influence.
+    :param deadband: Minimum tracking error threshold.
+    :return: Tuple of (fx, fy, active_neighbor_count).
+    """
+    fx_form, fy_form = 0.0, 0.0
+    active_neighbors = 0
+
+    for n_id, target_offset in target_offsets.items():
+        if not active_mask.get(n_id, False):
+            continue
+        if n_id not in relative_displacements:
+            continue
+
+        active_neighbors += 1
+        dx, dy = relative_displacements[n_id]
+        err_x = dx - target_offset[0]
+        err_y = dy - target_offset[1]
+        err_norm = math.hypot(err_x, err_y)
+
+        if err_norm > deadband:
+            if err_norm > huber_delta:
+                scale = huber_delta / err_norm
+                err_x *= scale
+                err_y *= scale
+            fx_form += k_p * err_x
+            fy_form += k_p * err_y
+
+    return fx_form, fy_form, active_neighbors

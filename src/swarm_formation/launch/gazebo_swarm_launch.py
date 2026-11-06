@@ -44,6 +44,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     use_resilient_str = LaunchConfiguration('use_resilient_method').perform(context).lower()
     csv_path = LaunchConfiguration('csv_path').perform(context)
     radius_str = LaunchConfiguration('formation_radius').perform(context)
+    sensing_range_str = LaunchConfiguration('sensing_range').perform(context)
     sim_duration_str = LaunchConfiguration('sim_duration').perform(context)
     headless_str = LaunchConfiguration('headless').perform(context).lower()
     world_arg = LaunchConfiguration('world').perform(context)
@@ -53,6 +54,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     enable_faults = enable_faults_str in ['true', '1', 'yes']
     use_resilient = use_resilient_str in ['true', '1', 'yes']
     radius = float(radius_str)
+    sensing_range = float(sensing_range_str)
     sim_duration = float(sim_duration_str)
     headless = headless_str in ['true', '1', 'yes']
 
@@ -145,7 +147,18 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             'enable_faults': enable_faults,
             'use_resilient_method': use_resilient,
             'formation_radius': radius,
+            'sensing_range': sensing_range,
         })
+
+        # Relative Neighbor & Obstacle Sensor Node (M1)
+        sensor_node = Node(
+            package='swarm_formation',
+            executable='neighbor_sensor',
+            name=f'neighbor_sensor_{i}',
+            output='screen',
+            parameters=node_params,
+        )
+        actions.append(sensor_node)
 
         # Gazebo Swarm Controller Node
         controller_node = Node(
@@ -223,6 +236,11 @@ def generate_launch_description() -> LaunchDescription:
             'formation_radius',
             default_value='2.0',
             description='Target polygon radius in meters.',
+        ),
+        DeclareLaunchArgument(
+            'sensing_range',
+            default_value='6.0',
+            description='Onboard sensor range limit in meters.',
         ),
         DeclareLaunchArgument(
             'csv_path',
