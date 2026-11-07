@@ -62,6 +62,16 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     spawn_jitter = float(LaunchConfiguration('spawn_jitter').perform(context))
     spawn_yaw_jitter = float(LaunchConfiguration('spawn_yaw_jitter').perform(context))
     truthy = ['true', '1', 'yes']
+    network_profile_arg = LaunchConfiguration('network_profile').perform(context)
+    network_profile = ''
+    if network_profile_arg:
+        cand = os.path.join(pkg_swarm, 'config', 'network_profiles', network_profile_arg)
+        for path in (network_profile_arg, cand, cand + '.yaml'):
+            if os.path.isfile(path):
+                network_profile = os.path.abspath(path)
+                break
+        if not network_profile:
+            raise RuntimeError(f'network_profile not found: {network_profile_arg}')
     use_landmarks = LaunchConfiguration('use_landmarks').perform(context).lower() in truthy
     use_peer_cov = LaunchConfiguration('use_peer_covariance').perform(context).lower() in truthy
 
@@ -280,6 +290,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
                 'default_delay_sec': default_delay,
                 'default_jitter_sec': default_jitter,
                 'enable_faults': enable_faults,
+                'network_profile': network_profile,
                 'use_sim_time': use_sim_time,
             },
         ],
@@ -470,6 +481,11 @@ def generate_launch_description() -> LaunchDescription:
             'spawn_jitter',
             default_value='0.0',
             description='Uniform start-position perturbation in meters (0 = preset poses).',
+        ),
+        DeclareLaunchArgument(
+            'network_profile',
+            default_value='',
+            description='Per-direction link profile (name in config/network_profiles or path).',
         ),
         DeclareLaunchArgument(
             'use_landmarks',

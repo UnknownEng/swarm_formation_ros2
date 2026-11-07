@@ -26,7 +26,7 @@
 >
 > Validation, deployed arena stack (CBF, navigation, anchor, delay compensation), campaign
 > simulator, 25 seeds per cell, clean / launch fault settings: displacement 25/25 and
-> 25/25 converged; distance 23/25 and 23/25; bearing 25/25 and 24/25; **all 150 runs
+> 25/25 converged; distance 23/25 and 21/25; bearing 25/25 and 24/25; **all 150 runs
 > collision-free**. The distance failures are safe deadlocks (two robots that must swap
 > sides of a rubble block through a narrow gap). Tests: `test_m4_acceptance.py` (Gazebo
 > spawn and 30 random starts per family, pure-law limitation, rotation invariance, one

@@ -10,6 +10,16 @@
 > **Erratum (2026-11-07).** All Gazebo results below were measured before 2026-11-07 with two defects that invalidate them: wheel odometry never reached the EKF (bridge type `gz.msgs.OdometryWithCovariance` vs the DiffDrive plugin's `gz.msgs.Odometry`; `/robot_i/odom` carried 0 messages, and the EKF fallback dead-reckoned with the first commanded velocity), and all nodes ran on the wall clock while Gazebo ran at about 5% of real time. Current Gazebo results are in README Section 6.1/6.2.
 >
 > The CBF described here was replaced: it applied a single-integrator barrier and converted the result to (v, w), so the executed unicycle motion was not covered, and its soft-penalty solver returned infeasible velocities in ~0.8% of feasible problems; the stack also deadlocked (36% convergence). The current filter (`cbf_qp.py`) uses a look-ahead point with an exact inverse map, an exact 2D solver, right-hand deadlock breaking, and passes pure rotations.
+>
+> **Update (2026-11-07).** The asymmetric-network study (M2) exposed a hole in that
+> filter: unfiltered rotations swing the look-ahead point into a barrier, after which the
+> QP let the centre move inward while the look-ahead point moved out. Robots crowded
+> against a wall ratcheted through it (7 of 25 runs in one condition). The filter now also
+> clamps the forward speed with barriers on the robot centre (obstacles with their full
+> margin, peers with the safety distance), and gives obstacle barriers priority when not
+> all barriers can be met (`test_rotate_and_drive_cannot_ratchet_into_a_wall`,
+> `test_infeasible_qp_protects_obstacles_first`). In the 550-run campaign every deployed run
+> is collision-free; the cost is in the robot-dropout condition (72% converged, 84% before).
 
 ---
 

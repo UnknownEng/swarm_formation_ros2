@@ -1,0 +1,30 @@
+
+== one_way_ring: 1 runs
+  one_way_ring conv=yes t=  7.5s final=0.100 settled mean=0.100 max=0.100 closest=0.81 m est=0.009 m (ran 40 s)
+  -> converged 1/1, collision-free 1/1
+    convergence time (s) 7.450 +/- nan (n=1, min 7.450, max 7.450)
+    final error (m) 0.100 +/- nan (n=1, min 0.100, max 0.100)
+    settled mean error (m) 0.100 +/- nan (n=1, min 0.100, max 0.100)
+    settled max error (m) 0.100 +/- nan (n=1, min 0.100, max 0.100)
+    closest robots (m) 0.810 +/- nan (n=1, min 0.810, max 0.810)
+    localization error (m) 0.009 +/- nan (n=1, min 0.009, max 0.009)
+
+== robot1_deaf: 1 runs
+  robot1_deaf  conv=yes t=  7.3s final=0.121 settled mean=0.122 max=0.125 closest=1.16 m est=0.008 m (ran 40 s)
+  -> converged 1/1, collision-free 1/1
+    convergence time (s) 7.313 +/- nan (n=1, min 7.313, max 7.313)
+    final error (m) 0.121 +/- nan (n=1, min 0.121, max 0.121)
+    settled mean error (m) 0.122 +/- nan (n=1, min 0.122, max 0.122)
+    settled max error (m) 0.125 +/- nan (n=1, min 0.125, max 0.125)
+    closest robots (m) 1.158 +/- nan (n=1, min 1.158, max 1.158)
+    localization error (m) 0.008 +/- nan (n=1, min 0.008, max 0.008)
+
+== robot1_mute: 1 runs
+  robot1_mute  conv=yes t=  6.7s final=0.058 settled mean=0.058 max=0.058 closest=1.13 m est=0.005 m (ran 40 s)
+  -> converged 1/1, collision-free 1/1
+    convergence time (s) 6.670 +/- nan (n=1, min 6.670, max 6.670)
+    final error (m) 0.058 +/- nan (n=1, min 0.058, max 0.058)
+    settled mean error (m) 0.058 +/- nan (n=1, min 0.058, max 0.058)
+    settled max error (m) 0.058 +/- nan (n=1, min 0.058, max 0.058)
+    closest robots (m) 1.133 +/- nan (n=1, min 1.133, max 1.133)
+    localization error (m) 0.005 +/- nan (n=1, min 0.005, max 0.005)

@@ -17,8 +17,11 @@
 import random
 
 from swarm_formation.network_model import (
+    apply_link_overrides,
     ChannelLink,
     compute_packet_latency,
+    parse_network_profile,
+    randomize_links,
     should_drop_packet,
 )
 
@@ -81,3 +84,49 @@ def test_compute_packet_latency_jitter_bounds() -> None:
         lat = compute_packet_latency(link, rng)
         assert (base_delay - jitter) - 1e-6 <= lat <= (base_delay + jitter) + 1e-6
         assert lat >= 0.0
+
+
+def _mesh(n: int = 5):
+    return {(s, d): ChannelLink(from_id=s, to_id=d) for s in range(1, n + 1)
+            for d in range(1, n + 1) if s != d}
+
+
+def test_network_profile_one_way_links() -> None:
+    """A profile cuts one direction of a pair and leaves the other working."""
+    text = """
+network_profile:
+  name: test
+  links:
+    - {from: 1, to: 0, drop_rate: 1.0}
+    - {from: 3, to: 4, drop_rate: 0.5, delay_sec: 0.2, jitter_sec: 0.05}
+"""
+    overrides = parse_network_profile(text)
+    assert overrides == [(1, 0, 1.0, 0.0, 0.0), (3, 4, 0.5, 0.2, 0.05)]
+    links = _mesh()
+    assert apply_link_overrides(links, overrides) == 4 + 1
+    for d in range(2, 6):
+        assert not links[(1, d)].enabled               # nobody hears robot 1
+        assert links[(d, 1)].enabled                   # robot 1 hears everybody
+    assert (links[(3, 4)].drop_rate, links[(3, 4)].delay_sec) == (0.5, 0.2)
+    assert (links[(4, 3)].drop_rate, links[(4, 3)].delay_sec) == (0.0, 0.0)
+
+
+def test_shipped_network_profiles_parse() -> None:
+    """Every profile installed with the package parses to at least one rule."""
+    import glob
+    import os
+    paths = glob.glob(os.path.join(os.path.dirname(__file__), '..', 'config',
+                                   'network_profiles', '*.yaml'))
+    assert len(paths) >= 4
+    for path in paths:
+        assert parse_network_profile(path), path
+
+
+def test_randomized_links_are_asymmetric() -> None:
+    """Random asymmetry draws each direction independently and within bounds."""
+    links = _mesh()
+    randomize_links(links, 0.5, 0.15, random.Random(3))
+    for link in links.values():
+        assert 0.0 <= link.drop_rate <= 0.5 and 0.0 <= link.delay_sec <= 0.15
+    assert any(abs(links[(s, d)].drop_rate - links[(d, s)].drop_rate) > 0.05
+               for (s, d) in links)

@@ -261,3 +261,65 @@ def test_pure_rotation_passes_even_next_to_an_obstacle() -> None:
         relative_peers={2: (0.0, 0.70)}, relative_obstacles=[(0.45, 0.0, 0.0)],
     )
     assert interv_f > 0.0 and v_f < 1.0
+
+
+def _approach(responsibility: float) -> float:
+    """Robot i drives at a robot j that cannot see it (one-way link); return min distance."""
+    pi = [0.0, 0.0]
+    pj = (2.0, 0.0)              # j stands still: it does not know i is there
+    d_safe, dt, worst = 0.55, 0.01, float('inf')
+    for _ in range(600):
+        rel = {2: (pj[0] - pi[0], pj[1] - pi[1])}
+        cons = build_peer_cbf_constraints(rel, safety_distance=d_safe, gamma=1.5,
+                                          delay_bound_sec=0.0,
+                                          responsibility=responsibility)
+        ux, uy, _ = solve_2d_cbf_qp((1.0, 0.0), cons, max_speed=1.0)
+        pi[0] += ux * dt
+        pi[1] += uy * dt
+        worst = min(worst, math.hypot(pj[0] - pi[0], pj[1] - pi[1]))
+    return worst
+
+
+def test_responsibility_share_against_a_passive_peer() -> None:
+    """
+    Against a peer that does not react (it cannot see i), both shares keep the distance.
+
+    r = 0.5 is the more cautious one (it stops farther away); r = 1 uses the whole
+    barrier budget and doubles the allowed approach rate.
+    """
+    assert _approach(0.5) > _approach(1.0) >= 0.55 - 1e-6
+    cons = build_peer_cbf_constraints({2: (1.0, 0.0)}, safety_distance=0.55,
+                                      gamma=1.5, delay_bound_sec=0.0, responsibility=1.0)
+    half = build_peer_cbf_constraints({2: (1.0, 0.0)}, safety_distance=0.55,
+                                      gamma=1.5, delay_bound_sec=0.0)
+    assert math.isclose(cons[0].b, 2.0 * half[0].b)
+
+
+def test_infeasible_qp_protects_obstacles_first() -> None:
+    """Pressed between a wall and a peer, the robot gives up peer margin, not the wall."""
+    wall = build_obstacle_cbf_constraints([(-0.30, 0.0, 0.0)], delay_bound_sec=0.0)
+    peer = build_peer_cbf_constraints({2: (0.40, 0.0)}, delay_bound_sec=0.0)
+    assert wall[0].b < 0.0 and peer[0].b < 0.0      # both barriers already violated
+    ux, uy, slack = solve_2d_cbf_qp((-1.0, 0.0), wall + peer, max_speed=1.0)
+    assert slack > 0.0
+    assert wall[0].a_x * ux + wall[0].a_y * uy <= wall[0].b + 1e-6
+
+
+def test_rotate_and_drive_cannot_ratchet_into_a_wall() -> None:
+    """
+    Alternating unfiltered rotations with forward commands must not walk into a wall.
+
+    A robot 0.2 m from a wall (inside its barrier) facing it keeps asking to rotate, then
+    to drive. Without the centre barrier it crept to 0.107 m (the look-ahead point moved
+    out while the centre moved in); in the campaign this walked robots through walls.
+    """
+    x, yaw, dt = -4.4, -2.28, 0.05            # wall surface at x = -4.6
+    closest = 0.2
+    for k in range(400):
+        obstacles = [(-4.6 - x, 0.0, 0.0)]     # closest wall point, robot-relative
+        v, w = (0.0, -3.0) if k % 2 == 0 else (0.15, -3.0)
+        v, w, _ = compute_cbf_safe_twist(v, w, yaw, {}, obstacles, delay_bound_sec=0.05)
+        x += v * math.cos(yaw) * dt
+        yaw += w * dt
+        closest = min(closest, x + 4.6)
+    assert closest >= 0.2 - 1e-9

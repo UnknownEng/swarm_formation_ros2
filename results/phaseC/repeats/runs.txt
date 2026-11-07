@@ -1,0 +1,11 @@
+clean_s1 status=0 crashes=0 wall=343s last=40.04,0.0672,2.2357,1.1623,0,True,9.442,0.0004
+clean_s2 status=0 crashes=0 wall=356s last=40.04,0.0697,2.2067,1.1327,0,True,6.942,0.0000
+clean_s3 status=0 crashes=0 wall=363s last=40.00,0.0439,2.2793,1.1383,0,True,6.700,0.0051
+clean_s4 status=0 crashes=0 wall=366s last=40.05,0.0399,2.2844,1.1414,0,True,9.298,0.0000
+clean_s5 status=0 crashes=0 wall=322s last=40.01,0.0571,2.2456,1.1465,0,True,6.463,0.0001
+faults_s1 status=0 crashes=0 wall=374s last=40.00,0.1668,1.9742,0.9965,0,True,10.600,0.0192
+faults_s2 status=0 crashes=0 wall=378s last=40.04,0.1147,2.1639,1.0478,0,True,10.744,0.0097
+faults_s3 status=0 crashes=0 wall=366s last=40.01,0.1887,1.8891,0.8423,0,True,11.708,0.0240
+faults_s4 status=0 crashes=0 wall=379s last=40.04,0.0950,2.2286,0.9993,0,True,10.338,0.0205
+faults_s5 status=0 crashes=0 wall=350s last=40.04,0.3378,1.4542,0.9245,0,True,10.687,0.0254
+ALL DONE

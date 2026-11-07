@@ -29,15 +29,17 @@
 >    | landmarks | peer covariance | converged | collision-free | mean abs. localization error |
 >    | :---: | :---: | :---: | :---: | :---: |
 >    | yes | yes (default) | 10/10 | 10/10 | 0.015 m |
->    | yes | no | 10/10 | 10/10 | 0.016 m |
->    | no | yes | 10/10 | 10/10 | 0.81 m (max 1.54 m) |
->    | no | no | 10/10 | 10/10 | 0.91 m (max 1.82 m) |
+>    | yes | no | 10/10 | 10/10 | 0.015 m |
+>    | no | yes | 10/10 | 10/10 | 0.67 m (max 1.08 m) |
+>    | no | no | 10/10 | 10/10 | 0.54 m (max 0.81 m) |
 >
 >    Without landmarks the *absolute* pose is unobservable (odometry and relative
 >    measurements cannot fix the global frame), so it drifts, as theory predicts; the
 >    formation still converges because the controllers use relative measurements. The
 >    map-based parts (navigation, anchor, obstacle map) are what lose accuracy: the
->    closest obstacle approach fell from 0.22 m to 0.05 m (still collision-free).
+>    closest obstacle approach fell from 0.26 m to 0.17 m (still collision-free). Peer
+>    covariance does not measurably change the error in this campaign (differences are
+>    within the run-to-run spread); its benefit is filter consistency.
 >    `test_m5_acceptance.py::test_landmark_free_formation_still_converges` covers it.
 
 ---

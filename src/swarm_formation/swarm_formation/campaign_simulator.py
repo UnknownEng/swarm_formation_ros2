@@ -132,6 +132,8 @@ class CampaignRunConfig:
 
     # Formation anchor (virtual leader around a fixed centre, uses the EKF estimate)
     anchor_gain: float = 0.0
+    # Anchor gain while a robot hears no neighbour at all (isolation fallback)
+    isolated_anchor_gain: float = 0.0
     formation_center: Tuple[float, float] = DEFAULT_FORMATION_CENTER
 
     # Safety filter
@@ -148,6 +150,16 @@ class CampaignRunConfig:
     delay_sec: float = 0.0
     jitter_sec: float = 0.0
     stale_purge_sec: float = 1.5
+    # Asymmetric links: (src, dst, drop, delay, jitter) overrides for the directed link
+    # src -> dst (information about src reaching dst); 0 = any robot, as in the
+    # /network/set_link service. Later entries win.
+    link_overrides: Tuple[Tuple[int, int, float, float, float], ...] = ()
+    # Random asymmetry: every directed link draws its own drop in [0, max] and delay in
+    # [0, max] once per run (both directions of a pair independently)
+    random_link_max_drop: float = 0.0
+    random_link_max_delay: float = 0.0
+    # Share of each robot-robot barrier a robot enforces (0.5 reciprocal, 1 full)
+    cbf_peer_responsibility: float = 0.5
 
     # Sensing and odometry noise
     range_noise_std: float = 0.0
@@ -181,7 +193,32 @@ class CampaignRunConfig:
         """Return the latency bound the CBF margin is computed for."""
         if self.cbf_delay_bound_sec is not None:
             return self.cbf_delay_bound_sec
-        return max(0.0, self.delay_sec) + max(0.0, self.jitter_sec)
+        worst = max(0.0, self.delay_sec) + max(0.0, self.jitter_sec)
+        for _, _, _, delay, jitter in self.link_overrides:
+            worst = max(worst, max(0.0, delay) + max(0.0, jitter))
+        return worst + max(0.0, self.random_link_max_delay)
+
+    def link_table(
+        self, rng: Optional[np.random.RandomState] = None
+    ) -> Dict[Tuple[int, int], Tuple[float, float, float]]:
+        """Return (drop, delay, jitter) for every directed link (src, dst), 1-based."""
+        n = self.total_robots
+        table = {
+            (s, d): (self.drop_rate, self.delay_sec, self.jitter_sec)
+            for s in range(1, n + 1) for d in range(1, n + 1) if s != d
+        }
+        if rng is not None and (self.random_link_max_drop > 0.0
+                                or self.random_link_max_delay > 0.0):
+            for key in sorted(table):
+                drop, delay, jitter = table[key]
+                drop = max(drop, float(rng.uniform(0.0, self.random_link_max_drop)))
+                delay = delay + float(rng.uniform(0.0, self.random_link_max_delay))
+                table[key] = (drop, delay, jitter)
+        for src, dst, drop, delay, jitter in self.link_overrides:
+            for key in table:
+                if (src == 0 or key[0] == src) and (dst == 0 or key[1] == dst):
+                    table[key] = (drop, delay, jitter)
+        return table
 
 
 def generate_initial_states(
@@ -236,6 +273,9 @@ def run_single_simulation(
     cbf_delay_bound = config.effective_cbf_delay_bound()
 
     states = generate_initial_states(n, config.crossing_scenario, rng)
+    # Directed link table; random asymmetry uses its own generator so that the other
+    # random streams (and every symmetric condition) are unchanged
+    links = config.link_table(np.random.RandomState(seed + 7919))
     cur_x = [float(s[0]) for s in states]
     cur_y = [float(s[1]) for s in states]
     cur_yaw = [float(s[2]) for s in states]
@@ -373,12 +413,13 @@ def run_single_simulation(
                     bearing = wrap_angle(bearing + rng.normal(0.0, config.bearing_noise_std))
 
                 packets_sent += 1
-                if config.drop_rate > 0.0 and rng.uniform() < config.drop_rate:
+                l_drop, l_delay, l_jitter = links[(j + 1, i + 1)]
+                if l_drop > 0.0 and (l_drop >= 1.0 or rng.uniform() < l_drop):
                     packets_dropped += 1
                     continue
-                latency = max(0.0, config.delay_sec)
-                if config.jitter_sec > 0.0:
-                    jitter = rng.uniform(-config.jitter_sec, config.jitter_sec)
+                latency = max(0.0, l_delay)
+                if l_jitter > 0.0:
+                    jitter = rng.uniform(-l_jitter, l_jitter)
                     latency = max(0.0, latency + jitter)
                 latency_sum += latency
                 latency_count += 1
@@ -549,11 +590,16 @@ def run_single_simulation(
                         (fx, fy), (ex_n, ey_n), steer_point, config.nav_min_force
                     )
 
-            if config.anchor_gain > 0.0:
+            # A robot that hears no neighbour (e.g. its receiver failed) has no formation
+            # force; it falls back to driving to its own slot at formation strength.
+            anchor_gain = config.anchor_gain
+            if not any(active_mask.get(pid, True) for pid in rel_disp):
+                anchor_gain = max(anchor_gain, config.isolated_anchor_gain)
+            if anchor_gain > 0.0:
                 ex_i, ey_i, _ = ekfs[i].get_pose()
                 fax, fay = compute_anchor_force(
                     robot_id, n, config.formation_radius, config.formation_center,
-                    (ex_i, ey_i), config.anchor_gain, rotation=pattern_rotation,
+                    (ex_i, ey_i), anchor_gain, rotation=pattern_rotation,
                 )
                 fx += fax
                 fy += fay
@@ -597,6 +643,7 @@ def run_single_simulation(
                     max_linear_vel=config.v_max,
                     max_angular_vel=config.omega_max,
                     lookahead_dist=config.cbf_lookahead,
+                    peer_responsibility=config.cbf_peer_responsibility,
                 )
                 cmd_v[i], cmd_w[i] = safe_v, safe_w
                 total_interventions += interv * dt

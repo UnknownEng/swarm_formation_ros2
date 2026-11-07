@@ -51,6 +51,9 @@ class SafetyFilterNode(Node):
         self.declare_parameter('yaw_gain_kyaw', 4.0)
         self.declare_parameter('filter_rate', 50.0)
         self.declare_parameter('cbf_lookahead', 0.15)
+        # Share of each robot-robot barrier this robot enforces (0.5 reciprocal; 1.0 uses
+        # the whole budget, valid only against a passive peer). See cbf_qp.
+        self.declare_parameter('peer_responsibility', 0.5)
 
         self.robot_id = int(self.get_parameter('robot_id').value)
         self.total_robots = int(self.get_parameter('total_robots').value)
@@ -64,6 +67,7 @@ class SafetyFilterNode(Node):
         self.k_yaw = float(self.get_parameter('yaw_gain_kyaw').value)
         self.filter_rate = float(self.get_parameter('filter_rate').value)
         self.cbf_lookahead = float(self.get_parameter('cbf_lookahead').value)
+        self.peer_responsibility = float(self.get_parameter('peer_responsibility').value)
 
         self.dt = 1.0 / self.filter_rate
 
@@ -177,6 +181,7 @@ class SafetyFilterNode(Node):
             max_angular_vel=self.max_ang_vel,
             yaw_gain_kyaw=self.k_yaw,
             lookahead_dist=self.cbf_lookahead,
+            peer_responsibility=self.peer_responsibility,
         )
 
         cmd = Twist()

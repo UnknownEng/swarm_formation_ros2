@@ -91,6 +91,7 @@ DEPLOYED = {
     'use_world_obstacles': True,
     'use_navigation': True,
     'anchor_gain': 0.4,
+    'isolated_anchor_gain': 1.8,   # = k_p
     'twist_mapper': 'calm',
     'delay_compensation': True,
     'cbf_delay_bound_sec': 0.05,   # delay_bound_sec in swarm_params.yaml
@@ -112,7 +113,8 @@ def define_campaign_conditions(duration_sec: float = 30.0) -> Dict[str, Campaign
       ablations under those settings (each removes one deployed component, plus one that
       adds the old Huber/EMA/heartbeat resilience layer);
     * packet-drop sweep, applied-latency sweep (at the deployed 50 ms bound and with a
-      matched bound), and a permanent robot dropout.
+      matched bound), and a permanent robot dropout;
+    * asymmetric links: one direction of some links impaired or cut (network_profiles).
     """
     def cfg(**kw: Any) -> CampaignRunConfig:
         params = dict(DEPLOYED)
@@ -145,6 +147,16 @@ def define_campaign_conditions(duration_sec: float = 30.0) -> Dict[str, Campaign
 
     # 5. Robot 4 stops for good at t = 5 s (motor failure); others keep forming
     conditions['robot4_dropout'] = cfg(dropout_robot_id=4, dropout_start_sec=5.0)
+
+    # 6. Asymmetric links (M2): a link src -> dst carries information about src to dst;
+    #    each pattern impairs one direction only, on an otherwise clean channel
+    conditions['asym_robot1_mute'] = cfg(link_overrides=((1, 0, 1.0, 0.0, 0.0),))
+    conditions['asym_robot1_deaf'] = cfg(link_overrides=((0, 1, 1.0, 0.0, 0.0),))
+    conditions['asym_robot1_tx_degraded'] = cfg(link_overrides=((1, 0, 0.5, 0.2, 0.05),))
+    conditions['asym_one_way_ring'] = cfg(
+        link_overrides=tuple((i, i % 5 + 1, 1.0, 0.0, 0.0) for i in range(1, 6))
+    )
+    conditions['asym_random'] = cfg(random_link_max_drop=0.5, random_link_max_delay=0.15)
 
     return conditions
 

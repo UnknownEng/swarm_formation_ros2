@@ -7,6 +7,28 @@
 
 ---
 
+> **Erratum and resolution (2026-11-07) - status: 🟢 complete.** The Gazebo numbers
+> below were measured without wheel odometry and on the wall clock (see the M4-M7 errata)
+> and are superseded by README Sections 6.1-6.2. The node always kept one link per
+> direction, but per-direction ("asymmetric") impairments, named in the project title, were
+> never configured or tested. Now:
+> - per-direction settings from YAML profiles (`network_profile` launch argument,
+>   `config/network_profiles/`: `robot1_mute`, `robot1_deaf`, `robot1_tx_degraded`,
+>   `one_way_ring`) and random per-direction links (`random_link_max_drop/_delay/_seed`);
+>   the campaign simulator applies the same per-link table (`link_overrides`,
+>   `random_link_max_*`), and its symmetric results are unchanged (checked to 1e-15);
+> - five asymmetric campaign conditions, 125 runs: all collision-free, 100% converged
+>   except the one-way ring (96%) (README Section 6.4, `asymmetric_network_barchart.png`);
+> - fixes found by the study: a robot that hears nobody froze (0/25 converged; now falls
+>   back to its own slot, 25/25), and a ratchet in the look-ahead safety filter let robots
+>   crowded against a wall walk through it (centre barrier added; README 5.1);
+> - Gazebo runs with the `robot1_mute`, `one_way_ring` and `robot1_deaf` profiles: README
+>   Section 6.4.
+> Not covered: a robot that cannot see a neighbour that drives toward it is protected only by
+> the margins (no acknowledgement protocol); radio links do not depend on distance or walls.
+
+---
+
 ## 1. Scope: Required vs Delivered
 
 ### Required

@@ -49,20 +49,26 @@ def build_peer_cbf_constraints(
     gamma: float = 1.5,
     delay_bound_sec: float = 0.05,
     max_linear_vel: float = 1.4,
+    responsibility: float = 0.5,
 ) -> List[CBFConstraint]:
     """
     Construct reciprocal Control Barrier Function constraints for inter-robot collision avoidance.
 
     Barrier function: h_ij = ||p_ij||^2 - (D_s^eff)^2 >= 0
-    Time derivative under reciprocal avoidance:
-    dot{h}_ij = 2 p_ij^T (u_j - u_i) >= -gamma * h_ij
-    Assuming symmetric reciprocal effort: p_ij^T u_i <= (gamma / 4) * (||p_ij||^2 - (D_s^eff)^2)
+    Time derivative: dot{h}_ij = 2 p_ij^T (u_j - u_i) >= -gamma * h_ij.
+    Robot i takes a share r of the required effort: p_ij^T u_i <= (r * gamma / 2) * h_ij.
+    With r = 0.5 (reciprocal, default) the two constraints add up to the barrier
+    condition; against a peer that does not move, i's half alone is already stricter than
+    needed. r = 1 uses the whole budget and is only valid against a passive peer. Neither
+    covers a peer that cannot see i (one-way link) and drives toward it; that would need
+    i to know whether j hears it. Measured on asymmetric links: README Section 6.4.
 
     :param relative_peers: Dict of peer_id -> (dx, dy) in reference frame.
     :param safety_distance: Minimum allowable inter-center distance in meters.
     :param gamma: Extended class-K gain parameter controlling barrier decay rate.
     :param delay_bound_sec: Maximum latency bound tau_max for margin expansion.
     :param max_linear_vel: Maximum robot translation speed for delay margin expansion.
+    :param responsibility: Share r of the barrier effort this robot takes (0.5 or 1).
     :return: List of CBFConstraint instances.
     """
     constraints: List[CBFConstraint] = []
@@ -78,10 +84,10 @@ def build_peer_cbf_constraints(
             continue
 
         h = dist_sq - d_eff_sq
-        # p_ij^T u_i <= (gamma / 4) * h
+        # p_ij^T u_i <= (r * gamma / 2) * h
         a_x = dx
         a_y = dy
-        b = (gamma * 0.25) * h
+        b = (gamma * 0.5 * responsibility) * h
 
         constraints.append(
             CBFConstraint(
@@ -177,7 +183,10 @@ def solve_2d_cbf_qp(
     on one constraint line, at a vertex of two lines, or where a line meets the speed
     circle. All such candidates are enumerated and the cheapest feasible one is
     returned. Only when no feasible point exists (e.g. the robot already starts inside
-    a barrier) is the least-violating candidate returned, with its violation as slack.
+    a barrier, or crowding robots press it against a wall) is the least-violating
+    candidate returned, with its violation as slack. Obstacle constraints take priority:
+    a static obstacle cannot make room, a peer can, so the candidate with the smallest
+    obstacle violation wins and peer violation only breaks ties.
 
     :param u_des: Desired nominal velocity vector (u_x, u_y).
     :param constraints: List of linear CBF constraints.
@@ -231,9 +240,11 @@ def solve_2d_cbf_qp(
 
     best_feasible: Optional[Tuple[float, float]] = None
     best_cost = float('inf')
+    obstacle_cons = [c for c in constraints if c.entity_type == 'obstacle']
+    other_cons = [c for c in constraints if c.entity_type != 'obstacle']
     least_viol_pt = (0.0, 0.0)
     least_viol = float('inf')
-    least_viol_cost = float('inf')
+    least_key = (float('inf'), float('inf'), float('inf'))
 
     for cx, cy in candidates:
         viol = _max_violation(cx, cy, constraints)
@@ -242,11 +253,13 @@ def solve_2d_cbf_qp(
             if cost < best_cost:
                 best_cost = cost
                 best_feasible = (cx, cy)
-        elif viol < least_viol - 1e-12 or (
-            abs(viol - least_viol) <= 1e-12 and cost < least_viol_cost
-        ):
+            continue
+        # Lexicographic: obstacle violation first, then peer violation, then cost
+        obs_v = _max_violation(cx, cy, obstacle_cons)
+        key = (obs_v if obs_v > feas_tol else 0.0, _max_violation(cx, cy, other_cons), cost)
+        if key < least_key:
+            least_key = key
             least_viol = viol
-            least_viol_cost = cost
             least_viol_pt = (cx, cy)
 
     if best_feasible is not None:
@@ -271,6 +284,7 @@ def compute_cbf_safe_twist(
     lookahead_dist: float = 0.15,
     deadlock_bias: float = 0.5,
     deadlock_band: float = 0.5,
+    peer_responsibility: float = 0.5,
 ) -> Tuple[float, float, float]:
     """
     Filter a unicycle velocity command with a CBF-QP on a look-ahead point.
@@ -302,6 +316,8 @@ def compute_cbf_safe_twist(
         only changes the *nominal* input, so the barrier guarantee is unaffected.
     :param deadlock_band: Distance beyond the effective barrier radius over which the
         bias fades out, in meters.
+    :param peer_responsibility: Share of each peer barrier this robot enforces (0.5 =
+        reciprocal; 1 = whole budget, valid only against a passive peer).
     :return: Tuple of (safe_v, safe_w, intervention_norm).
     """
     del yaw_gain_kyaw
@@ -334,6 +350,7 @@ def compute_cbf_safe_twist(
         gamma=gamma_peer,
         delay_bound_sec=delay_bound_sec,
         max_linear_vel=max_linear_vel,
+        responsibility=peer_responsibility,
     )
     obs_constraints = build_obstacle_cbf_constraints(
         relative_obstacles=obstacles_from_q,
@@ -380,15 +397,55 @@ def compute_cbf_safe_twist(
 
     intervention_norm = math.hypot(safe_ux - u0_x, safe_uy - u0_y)
     if intervention_norm < 1e-6:
+        safe_v, safe_w = v_raw, w_raw
+    else:
+        # 5. Exact inverse map q_dot -> (v, w); uniform scaling keeps a^T u <= b when b >= 0
+        safe_v = cos_h * safe_ux + sin_h * safe_uy
+        safe_w = (-sin_h * safe_ux + cos_h * safe_uy) / ell
+        scale = 1.0
+        if abs(safe_v) > max_linear_vel:
+            scale = min(scale, max_linear_vel / abs(safe_v))
+        if abs(safe_w) > max_angular_vel:
+            scale = min(scale, max_angular_vel / abs(safe_w))
+        safe_v *= scale
+        safe_w *= scale
+
+    # 6. Centre barrier. The look-ahead barrier alone can be ratcheted: unfiltered
+    #    rotations (step 0) swing q into a barrier, and the QP then lets the centre move
+    #    inward while q moves out. Measured in the campaign simulator: a robot pressed
+    #    against a wall crept ~7 mm per rotate/drive cycle until it crossed it. The centre
+    #    moves only along the heading (p_dot = v h), so its barriers bound v alone:
+    #    v (a . h) <= b. Clamping v can only slow the robot, never turn it.
+    #    It is a backstop: for peers it keeps only the safety distance itself (the delay
+    #    margin is the look-ahead barrier's job; with it, robots squeezing past a stopped
+    #    robot stalled: 16/25 instead of 21/25 converged in the robot-dropout condition).
+    centre_constraints = build_peer_cbf_constraints(
+        relative_peers=relative_peers,
+        safety_distance=safety_dist_peer,
+        gamma=gamma_peer,
+        delay_bound_sec=0.0,
+        max_linear_vel=max_linear_vel,
+        responsibility=peer_responsibility,
+    ) + build_obstacle_cbf_constraints(
+        relative_obstacles=relative_obstacles,
+        robot_radius=0.20,
+        safety_margin=max(0.0, safety_dist_obs - 0.20),
+        gamma_obs=gamma_obs,
+        delay_bound_sec=delay_bound_sec,
+        max_linear_vel=max_linear_vel,
+    )
+    v_hi, v_lo = max_linear_vel, -max_linear_vel
+    for c in centre_constraints:
+        slope = c.a_x * cos_h + c.a_y * sin_h
+        if slope > 1e-9:
+            v_hi = min(v_hi, c.b / slope)
+        elif slope < -1e-9:
+            v_lo = max(v_lo, c.b / slope)
+    clamped_v = min(max(safe_v, v_lo), v_hi) if v_lo <= v_hi else 0.0
+    if abs(clamped_v - safe_v) > 1e-9:
+        intervention_norm += abs(clamped_v - safe_v)
+        safe_v = clamped_v
+
+    if intervention_norm < 1e-6:
         return v_raw, w_raw, 0.0
-
-    # 5. Exact inverse map q_dot -> (v, w); uniform scaling keeps a^T u <= b when b >= 0
-    safe_v = cos_h * safe_ux + sin_h * safe_uy
-    safe_w = (-sin_h * safe_ux + cos_h * safe_uy) / ell
-    scale = 1.0
-    if abs(safe_v) > max_linear_vel:
-        scale = min(scale, max_linear_vel / abs(safe_v))
-    if abs(safe_w) > max_angular_vel:
-        scale = min(scale, max_angular_vel / abs(safe_w))
-
-    return safe_v * scale, safe_w * scale, intervention_norm
+    return safe_v, safe_w, intervention_norm

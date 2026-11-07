@@ -38,6 +38,10 @@ setup(
             'share/' + package_name + '/config/fault_profiles',
             glob('config/fault_profiles/*.yaml'),
         ),
+        (
+            'share/' + package_name + '/config/network_profiles',
+            glob('config/network_profiles/*.yaml'),
+        ),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

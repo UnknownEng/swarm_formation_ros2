@@ -33,6 +33,8 @@
     # converged at 13 s with 0.10 m final error once wheel odometry reached the EKF.
     # (Earlier anchored Gazebo failures were caused by the missing odometry.)
     anchor_gain: 0.4
+    # Anchor gain while a robot hears no neighbour (receiver failure fallback)
+    isolated_anchor_gain: 1.8
     formation_center_x: 0.44
     formation_center_y: -0.44
 
@@ -94,6 +96,8 @@
     cbf_gamma_obs: 2.0
     delay_bound_sec: 0.05
     cbf_lookahead: 0.15
+    # Share of each robot-robot barrier a robot enforces (0.5 reciprocal; see cbf_qp)
+    peer_responsibility: 0.5
     filter_rate: 50.0
 
     # Fault Injection Parameters

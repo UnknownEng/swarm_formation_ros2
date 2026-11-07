@@ -1,0 +1,6 @@
+# Robot 1's receiver fails: robot 1 receives nothing about the others, while they all
+# still receive robot 1 (one-way links all -> 1 cut).
+network_profile:
+  name: robot1_deaf
+  links:
+    - {from: 0, to: 1, drop_rate: 1.0}

@@ -2,32 +2,32 @@
     SWARM FORMATION: ONE-COMMAND MASTER REPRODUCTION PIPELINE
 ========================================================================
 Workspace Directory: /home/kali/swarm_ws
-Start Time: Sat Nov  7 04:11:11 AM UTC 2026
+Start Time: Sat Nov  7 08:47:37 AM UTC 2026
 >> [STEP 1/7] Sourcing ROS 2 Jazzy underlay...
 >> [STEP 2/7] Building workspace with colcon...
 Starting >>> swarm_interfaces
-Finished <<< swarm_interfaces [0.83s]
+Finished <<< swarm_interfaces [1.33s]
 Starting >>> swarm_formation
-Finished <<< swarm_formation [3.03s]
+Finished <<< swarm_formation [3.10s]
 
-Summary: 2 packages finished [4.09s]
+Summary: 2 packages finished [4.70s]
 >> [STEP 3/7] Running regression and acceptance test suite...
-........................................................................ [ 45%]
-........................................................................ [ 91%]
-.............                                                            [100%]
+........................................................................ [ 44%]
+........................................................................ [ 88%]
+...................                                                      [100%]
 =============================== warnings summary ===============================
 test/test_flake8.py::test_flake8
 test/test_flake8.py::test_flake8
 test/test_flake8.py::test_flake8
 test/test_flake8.py::test_flake8
-  Warning: This process (pid=1734) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  Warning: This process (pid=18307) is multi-threaded, use of fork() may lead to deadlocks in the child.
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-157 passed, 4 warnings in 266.85s (0:04:26)
+163 passed, 4 warnings in 228.75s (0:03:48)
 >> [STEP 4/7] Running the default configuration in Gazebo Harmonic (40 s simulated)...
 your 131072x1 screen size is bogus. expect trouble
 
->> [CLEANUP] Stopping simulation process group 1963...
+>> [CLEANUP] Stopping simulation process group 18594...
 >> [STEP 5/7] Processing the recorded rosbag and generating plots...
 Reading bag: /home/kali/swarm_ws/results/reproduction/gazebo_bag...
 Computing metrics...
@@ -35,16 +35,16 @@ Computing metrics...
 ========================================
        OFFLINE ROSBAG METRICS SUMMARY   
 ========================================
-Total Duration        : 40.18 s
-Final Shape Error     : 0.0770 m
-Min Shape Error       : 0.0655 m
-Global Min Distance   : 1.0745 m
+Total Duration        : 40.31 s
+Final Shape Error     : 0.0498 m
+Min Shape Error       : 0.0417 m
+Global Min Distance   : 1.1489 m
 Total Collisions      : 0
 Converged             : True
-Convergence Time      : 7.85 s
-Mean Estimation Error : 0.0105 m
+Convergence Time      : 6.94 s
+Mean Estimation Error : 0.0068 m
 Collision-Free Status : True
-Total Control Energy  : 338.9039
+Total Control Energy  : 241.8984
 ========================================
 Saved CSV : /home/kali/swarm_ws/results/reproduction/offline_bag_metrics.csv
 Saved JSON: /home/kali/swarm_ws/results/reproduction/offline_bag_summary.json
@@ -55,25 +55,30 @@ Generated plots:
   - /home/kali/swarm_ws/results/reproduction/plots/gazebo/shape_error_and_safety.png
   - /home/kali/swarm_ws/results/reproduction/plots/gazebo/estimation_error.png
   - /home/kali/swarm_ws/results/reproduction/plots/gazebo/diagnostic_summary.png
->> [STEP 6/7] Running the campaign (17 conditions x 25 seeds = 425 runs)...
-Starting Campaign: 17 Conditions | 25 Seeds/Condition | Total Runs: 425
+>> [STEP 6/7] Running the campaign (22 conditions x 25 seeds = 550 runs)...
+Starting Campaign: 22 Conditions | 25 Seeds/Condition | Total Runs: 550
   arena_unshielded             converged 100% | shape 0.042 m | min dist 0.205 m | robot-safe   0% | obstacle-safe  76%
   arena_apf                    converged 100% | shape 0.044 m | min dist 0.194 m | robot-safe   0% | obstacle-safe  80%
-  deployed_clean               converged 100% | shape 0.047 m | min dist 1.030 m | robot-safe 100% | obstacle-safe 100%
-  deployed_impaired            converged 100% | shape 0.035 m | min dist 0.957 m | robot-safe 100% | obstacle-safe 100%
-  impaired_no_navigation       converged  80% | shape 0.220 m | min dist 0.966 m | robot-safe 100% | obstacle-safe 100%
-  impaired_no_anchor           converged 100% | shape 0.035 m | min dist 0.982 m | robot-safe 100% | obstacle-safe 100%
-  impaired_no_delay_comp       converged 100% | shape 0.049 m | min dist 0.972 m | robot-safe 100% | obstacle-safe 100%
-  impaired_legacy_mapper       converged 100% | shape 0.071 m | min dist 0.988 m | robot-safe 100% | obstacle-safe 100%
-  impaired_with_resilience     converged 100% | shape 0.035 m | min dist 0.984 m | robot-safe 100% | obstacle-safe 100%
-  sweep_drop_15pct             converged 100% | shape 0.047 m | min dist 1.019 m | robot-safe 100% | obstacle-safe 100%
-  sweep_drop_30pct             converged 100% | shape 0.048 m | min dist 1.015 m | robot-safe 100% | obstacle-safe 100%
-  sweep_drop_50pct             converged 100% | shape 0.045 m | min dist 1.003 m | robot-safe 100% | obstacle-safe 100%
-  sweep_delay_50ms             converged 100% | shape 0.048 m | min dist 1.019 m | robot-safe 100% | obstacle-safe 100%
-  sweep_delay_100ms            converged 100% | shape 0.044 m | min dist 0.984 m | robot-safe 100% | obstacle-safe 100%
-  sweep_delay_200ms            converged 100% | shape 0.135 m | min dist 0.897 m | robot-safe 100% | obstacle-safe 100%
-  sweep_delay_200ms_matched    converged  44% | shape 0.379 m | min dist 1.216 m | robot-safe 100% | obstacle-safe 100%
-  robot4_dropout               converged  84% | shape 0.223 m | min dist 0.976 m | robot-safe 100% | obstacle-safe 100%
+  deployed_clean               converged 100% | shape 0.046 m | min dist 1.037 m | robot-safe 100% | obstacle-safe 100%
+  deployed_impaired            converged 100% | shape 0.041 m | min dist 0.973 m | robot-safe 100% | obstacle-safe 100%
+  impaired_no_navigation       converged  80% | shape 0.198 m | min dist 0.996 m | robot-safe 100% | obstacle-safe 100%
+  impaired_no_anchor           converged 100% | shape 0.038 m | min dist 0.978 m | robot-safe 100% | obstacle-safe 100%
+  impaired_no_delay_comp       converged 100% | shape 0.048 m | min dist 0.981 m | robot-safe 100% | obstacle-safe 100%
+  impaired_legacy_mapper       converged 100% | shape 0.075 m | min dist 0.975 m | robot-safe 100% | obstacle-safe 100%
+  impaired_with_resilience     converged 100% | shape 0.036 m | min dist 0.978 m | robot-safe 100% | obstacle-safe 100%
+  sweep_drop_15pct             converged 100% | shape 0.044 m | min dist 1.030 m | robot-safe 100% | obstacle-safe 100%
+  sweep_drop_30pct             converged 100% | shape 0.047 m | min dist 1.025 m | robot-safe 100% | obstacle-safe 100%
+  sweep_drop_50pct             converged 100% | shape 0.047 m | min dist 1.002 m | robot-safe 100% | obstacle-safe 100%
+  sweep_delay_50ms             converged 100% | shape 0.045 m | min dist 1.002 m | robot-safe 100% | obstacle-safe 100%
+  sweep_delay_100ms            converged 100% | shape 0.045 m | min dist 0.983 m | robot-safe 100% | obstacle-safe 100%
+  sweep_delay_200ms            converged 100% | shape 0.137 m | min dist 0.906 m | robot-safe 100% | obstacle-safe 100%
+  sweep_delay_200ms_matched    converged  32% | shape 0.407 m | min dist 1.239 m | robot-safe 100% | obstacle-safe 100%
+  robot4_dropout               converged  72% | shape 0.267 m | min dist 0.969 m | robot-safe 100% | obstacle-safe 100%
+  asym_robot1_mute             converged 100% | shape 0.080 m | min dist 1.128 m | robot-safe 100% | obstacle-safe 100%
+  asym_robot1_deaf             converged 100% | shape 0.146 m | min dist 1.034 m | robot-safe 100% | obstacle-safe 100%
+  asym_robot1_tx_degraded      converged 100% | shape 0.051 m | min dist 1.087 m | robot-safe 100% | obstacle-safe 100%
+  asym_one_way_ring            converged  96% | shape 0.128 m | min dist 0.719 m | robot-safe 100% | obstacle-safe 100%
+  asym_random                  converged 100% | shape 0.043 m | min dist 0.984 m | robot-safe 100% | obstacle-safe 100%
 
 Campaign completed successfully.
 Summary CSV  : /home/kali/swarm_ws/results/reproduction/campaign/campaign_summary.csv
@@ -84,10 +89,11 @@ Generated campaign plots:
   - /home/kali/swarm_ws/results/reproduction/plots/campaign/safety_comparison_apf_vs_cbf.png
   - /home/kali/swarm_ws/results/reproduction/plots/campaign/difficulty_sweep_packet_drop.png
   - /home/kali/swarm_ws/results/reproduction/plots/campaign/difficulty_sweep_latency.png
+  - /home/kali/swarm_ws/results/reproduction/plots/campaign/asymmetric_network_barchart.png
 >> [STEP 7/7] Verifying reproduced results against README claims...
   PASS  Gazebo default run reached the formation
-  PASS  Gazebo final shape error 0.077 m < 0.25 m
-  PASS  Gazebo closest robots 1.07 m >= 0.50 m
+  PASS  Gazebo final shape error 0.050 m < 0.25 m
+  PASS  Gazebo closest robots 1.15 m >= 0.50 m
   PASS  offline bag analysis: collision-free
   PASS  deployed_clean: 100% robot-robot collision-free
   PASS  deployed_clean: 100% robot-obstacle collision-free
@@ -96,10 +102,17 @@ Generated campaign plots:
   PASS  deployed_impaired: 100% robot-obstacle collision-free
   PASS  deployed_impaired: converged in 100% of runs (>= 95%)
   PASS  without avoidance the crossing scenario collides
+  PASS  asym_one_way_ring (asymmetric links): 100% collision-free
+  PASS  asym_random (asymmetric links): 100% collision-free
+  PASS  asym_robot1_deaf (asymmetric links): 100% collision-free
+  PASS  asym_robot1_mute (asymmetric links): 100% collision-free
+  PASS  asym_robot1_tx_degraded (asymmetric links): 100% collision-free
+  PASS  five asymmetric-link conditions
   PASS  figure ablation_study_barchart.png
   PASS  figure safety_comparison_apf_vs_cbf.png
   PASS  figure difficulty_sweep_packet_drop.png
   PASS  figure difficulty_sweep_latency.png
+  PASS  figure asymmetric_network_barchart.png
 All verification checks passed
 
 ========================================================================
@@ -108,6 +121,5 @@ All verification checks passed
 Artifact Directory: /home/kali/swarm_ws/results/reproduction
 Campaign Summary CSV:  /home/kali/swarm_ws/results/reproduction/campaign/campaign_summary.csv
 Gazebo Metrics CSV:    /home/kali/swarm_ws/results/reproduction/repro_metrics.csv
-End Time: Sat Nov  7 04:35:57 AM UTC 2026
+End Time: Sat Nov  7 09:07:13 AM UTC 2026
 your 131072x1 screen size is bogus. expect trouble
-reproduce exit 0

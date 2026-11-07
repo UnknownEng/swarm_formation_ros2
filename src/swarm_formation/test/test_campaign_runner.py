@@ -56,6 +56,8 @@ def test_define_campaign_conditions_matrix():
         'sweep_drop_15pct', 'sweep_drop_30pct', 'sweep_drop_50pct',
         'sweep_delay_50ms', 'sweep_delay_100ms', 'sweep_delay_200ms',
         'sweep_delay_200ms_matched', 'robot4_dropout',
+        'asym_robot1_mute', 'asym_robot1_deaf', 'asym_robot1_tx_degraded',
+        'asym_one_way_ring', 'asym_random',
     ]
     for req in required:
         assert req in conditions, f'Condition {req} missing from campaign matrix'
@@ -164,7 +166,7 @@ def test_mini_campaign_and_visualization_pipeline():
 
         visualizer = CampaignVisualizer.from_json(json_path, output_dir=plots_dir)
         plots = visualizer.generate_all_campaign_plots()
-        assert len(plots) == 4
+        assert len(plots) == 5
         for p in plots:
             assert os.path.getsize(p) > 10000
 

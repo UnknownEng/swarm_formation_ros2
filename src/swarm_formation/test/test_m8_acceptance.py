@@ -77,7 +77,7 @@ def test_m8_acceptance_statistical_campaign_execution():
         # 5. Plotting suite tolerates a subset of conditions
         visualizer = CampaignVisualizer.from_json(json_path, output_dir=plots_dir)
         plots = visualizer.generate_all_campaign_plots()
-        assert len(plots) == 4
+        assert len(plots) == 5
         for plot_file in plots:
             assert os.path.exists(plot_file)
 

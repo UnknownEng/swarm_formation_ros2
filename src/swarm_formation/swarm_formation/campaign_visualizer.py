@@ -17,7 +17,7 @@
 import argparse
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -66,7 +66,28 @@ class CampaignVisualizer:
             ('impaired_legacy_mapper', 'legacy\ntwist mapper'),
             ('impaired_with_resilience', '+ Huber/EMA/\nheartbeat'),
         ]
+        title = ('Leave-one-out ablation of the deployed stack under nominal impairment '
+                 f'(15% drop, 80+/-40 ms delay, noise; {self._num_seeds()} seeds)')
+        return self._plot_condition_bars(conditions, title, filename)
 
+    def plot_asymmetric_links(self, filename: str = 'asymmetric_network_barchart.png') -> str:
+        """Generate the bar chart for the asymmetric (per-direction) link conditions."""
+        conditions = [
+            ('deployed_clean', 'symmetric\nclean'),
+            ('asym_robot1_mute', 'robot 1\nmute'),
+            ('asym_robot1_deaf', 'robot 1\ndeaf'),
+            ('asym_robot1_tx_degraded', 'robot 1 TX\n50% / 200 ms'),
+            ('asym_one_way_ring', 'one-way\nring'),
+            ('asym_random', 'random per-\ndirection links'),
+        ]
+        title = ('Asymmetric network impairments on the deployed stack '
+                 f'({self._num_seeds()} seeds)')
+        return self._plot_condition_bars(conditions, title, filename)
+
+    def _plot_condition_bars(
+        self, conditions: List[Tuple[str, str]], title: str, filename: str
+    ) -> str:
+        """Two panels: final shape error (mean, 95% CI) and convergence/safety rates."""
         labels = []
         shape_means = []
         shape_ci_errs = []
@@ -80,14 +101,12 @@ class CampaignVisualizer:
                 shape_means.append(s['shape_error_mean'])
                 ci_margin = max(0.0, s['shape_error_ci_upper'] - s['shape_error_mean'])
                 shape_ci_errs.append(ci_margin)
-                safe_rates.append(s['collision_free_rate_pct'])
+                safe_rates.append(min(s['collision_free_rate_pct'],
+                                      s.get('obstacle_collision_free_rate_pct', 100.0)))
                 conv_rates.append(s.get('convergence_rate_pct', float('nan')))
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-        fig.suptitle(
-            'Leave-one-out ablation of the deployed stack under nominal impairment '
-            f'(15% drop, 80+/-40 ms delay, noise; {self._num_seeds()} seeds)',
-            fontsize=14, fontweight='bold')
+        fig.suptitle(title, fontsize=14, fontweight='bold')
 
         x_pos = np.arange(len(labels))
         colors = ['#22c55e', '#94a3b8', '#60a5fa', '#38bdf8', '#818cf8', '#f59e0b'][:len(labels)]
@@ -109,7 +128,8 @@ class CampaignVisualizer:
         bars_conv = ax2.bar(x_pos - width / 2, conv_rates, width=width, color='#60a5fa',
                             edgecolor='black', alpha=0.85, label='Reached formation')
         bars_safe = ax2.bar(x_pos + width / 2, safe_rates, width=width, color='#22c55e',
-                            edgecolor='black', alpha=0.85, label='Collision-free')
+                            edgecolor='black', alpha=0.85,
+                            label='Collision-free (robots and obstacles)')
         ax2.set_xticks(x_pos)
         ax2.set_xticklabels(labels, fontsize=10)
         ax2.set_ylabel('Runs (%)', fontsize=11)
@@ -311,6 +331,7 @@ class CampaignVisualizer:
             self.plot_safety_comparison(),
             self.plot_packet_drop_sweep(),
             self.plot_latency_sweep(),
+            self.plot_asymmetric_links(),
         ]
 
 

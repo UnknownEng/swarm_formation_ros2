@@ -24,7 +24,7 @@
 > **Resolved (2026-11-07) - status: 🟢 complete.** `reproduce_all.sh` now builds, runs the
 > full test suite from the package directory, runs Gazebo in the default configuration
 > (with a check that wheel odometry arrived), processes and plots the bag with the real
-> CLI, regenerates the 425-run campaign, and in a final step checks the regenerated
+> CLI, regenerates the 550-run campaign, and in a final step checks the regenerated
 > results against the README claims (Gazebo converged, collision-free, campaign safety and
 > convergence rates, figures present), exiting non-zero on any mismatch. Every command has
 > a timeout so a hang is reported instead of waiting forever. `test_m9_acceptance.py` now
@@ -33,6 +33,8 @@
 > reports carry the current results; run against the old files these checks fail. The
 > end-to-end run of the script and the repeated Gazebo runs are recorded in README
 > Sections 6.1-6.2. Docker itself was not built here (no Docker on the test machine).
+> Final run on the final code: 163 tests, Gazebo, bag analysis, 550-run campaign, 22/22
+> checks passed (README Section 7.6).
 
 ---
 

@@ -83,6 +83,8 @@ class GazeboSwarmNode(Node):
         # Formation anchor (0 disables): pulls each robot toward its slot around a fixed
         # centre using its EKF position estimate, which stops the formation drifting.
         self.declare_parameter('anchor_gain', 0.0)
+        # Anchor gain while no neighbour is heard (receiver failure): go to own slot
+        self.declare_parameter('isolated_anchor_gain', 0.0)
         self.declare_parameter('formation_center_x', DEFAULT_FORMATION_CENTER[0])
         self.declare_parameter('formation_center_y', DEFAULT_FORMATION_CENTER[1])
 
@@ -148,6 +150,7 @@ class GazeboSwarmNode(Node):
         self.k_yaw = float(self.get_parameter('yaw_gain_kyaw').value)
 
         self.anchor_gain = float(self.get_parameter('anchor_gain').value)
+        self.isolated_anchor_gain = float(self.get_parameter('isolated_anchor_gain').value)
         self.formation_center = (
             float(self.get_parameter('formation_center_x').value),
             float(self.get_parameter('formation_center_y').value),
@@ -399,10 +402,14 @@ class GazeboSwarmNode(Node):
                 fx, fy = navigation_force((fx, fy), pos, steer_point, self.nav_min_force)
         f_nav = (fx, fy)
 
-        # Optional formation anchor (virtual leader around a fixed centre)
+        # Optional formation anchor (virtual leader around a fixed centre). A robot that
+        # hears no neighbour has no formation force and falls back to its own slot.
+        anchor_gain = self.anchor_gain
+        if not self._current_displacements(curr_time):
+            anchor_gain = max(anchor_gain, self.isolated_anchor_gain)
         fax, fay = compute_anchor_force(
             self.robot_id, self.total_robots, self.radius, self.formation_center,
-            (self.est_x, self.est_y), self.anchor_gain, rotation=pattern_rotation,
+            (self.est_x, self.est_y), anchor_gain, rotation=pattern_rotation,
         )
         fx += fax
         fy += fay

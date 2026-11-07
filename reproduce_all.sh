@@ -4,7 +4,7 @@
 # Decentralized Swarm Formation Control (ROS 2 Jazzy + Gazebo Harmonic)
 #
 # Builds, tests, runs the default configuration in Gazebo with a rosbag, processes
-# the bag offline, runs the 425-run kinematic campaign, regenerates all figures, and
+# the bag offline, runs the 550-run kinematic campaign, regenerates all figures, and
 # finally VERIFIES the reproduced results against the claims in README.md.
 # Any failing step stops the pipeline with a non-zero exit code.
 # ==============================================================================
@@ -124,7 +124,7 @@ timeout 900 ros2 run swarm_formation plot_bag "${GAZEBO_BAG_DIR}" \
     --output-dir "${PLOTS_DIR}/gazebo"
 
 # Step 6: Statistical campaign (kinematic simulator) and figures
-echo ">> [STEP 6/7] Running the campaign (17 conditions x 25 seeds = 425 runs)..."
+echo ">> [STEP 6/7] Running the campaign (22 conditions x 25 seeds = 550 runs)..."
 timeout 3600 ros2 run swarm_formation run_campaign \
     --seeds 25 \
     --duration 30.0 \
@@ -173,8 +173,15 @@ for name in ('deployed_clean', 'deployed_impaired'):
           f"{name}: converged in {float(c['convergence_rate_pct']):.0f}% of runs (>= 95%)")
 check(float(camp['arena_unshielded']['collision_free_rate_pct']) < 100.0,
       'without avoidance the crossing scenario collides')
+for name in sorted(k for k in camp if k.startswith('asym_')):
+    c = camp[name]
+    check(float(c['collision_free_rate_pct']) == 100.0
+          and float(c['obstacle_collision_free_rate_pct']) == 100.0,
+          f'{name} (asymmetric links): 100% collision-free')
+check(len([k for k in camp if k.startswith('asym_')]) == 5, 'five asymmetric-link conditions')
 for fig in ('ablation_study_barchart.png', 'safety_comparison_apf_vs_cbf.png',
-            'difficulty_sweep_packet_drop.png', 'difficulty_sweep_latency.png'):
+            'difficulty_sweep_packet_drop.png', 'difficulty_sweep_latency.png',
+            'asymmetric_network_barchart.png'):
     path = os.path.join(repro, 'plots', 'campaign', fig)
     check(os.path.isfile(path) and os.path.getsize(path) > 10000, f'figure {fig}')
 if failures:

@@ -28,7 +28,14 @@ from swarm_interfaces.msg import (
 )
 from swarm_interfaces.srv import SetLinkState
 
-from .network_model import ChannelLink, compute_packet_latency, should_drop_packet
+from .network_model import (
+    apply_link_overrides,
+    ChannelLink,
+    compute_packet_latency,
+    parse_network_profile,
+    randomize_links,
+    should_drop_packet,
+)
 from .node_runner import run_node
 
 
@@ -45,6 +52,12 @@ class NetworkImpairmentNode(Node):
         self.declare_parameter('default_jitter_sec', 0.0)
         self.declare_parameter('network_rate', 50.0)
         self.declare_parameter('enable_faults', False)
+        # Asymmetric channel: per-direction overrides from a YAML profile, and/or a random
+        # drop rate and extra delay drawn independently for every directed link
+        self.declare_parameter('network_profile', '')
+        self.declare_parameter('random_link_max_drop', 0.0)
+        self.declare_parameter('random_link_max_delay', 0.0)
+        self.declare_parameter('random_link_seed', 0)
 
         self.total_robots = int(self.get_parameter('total_robots').value)
         self.default_drop = float(self.get_parameter('default_drop_rate').value)
@@ -68,6 +81,21 @@ class NetworkImpairmentNode(Node):
                         delay_sec=self.default_delay,
                         jitter_sec=self.default_jitter,
                     )
+
+        rand_drop = float(self.get_parameter('random_link_max_drop').value)
+        rand_delay = float(self.get_parameter('random_link_max_delay').value)
+        if rand_drop > 0.0 or rand_delay > 0.0:
+            randomize_links(
+                self.links, rand_drop, rand_delay,
+                random.Random(int(self.get_parameter('random_link_seed').value)),
+            )
+        profile = str(self.get_parameter('network_profile').value)
+        if profile:
+            overrides = parse_network_profile(profile)
+            updated = apply_link_overrides(self.links, overrides)
+            self.get_logger().info(
+                f'Network profile {profile}: {len(overrides)} rule(s), {updated} link update(s)'
+            )
 
         # Statistics
         self.total_forwarded = 0

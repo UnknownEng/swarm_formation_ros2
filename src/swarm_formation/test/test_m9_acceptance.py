@@ -121,7 +121,7 @@ def test_bag_tool_invocations_match_their_parsers(doc):
 def test_readme_documents_current_results():
     """README carries the current campaign and Gazebo results, not the withdrawn ones."""
     content = _read(README)
-    for section in ('## 6. Statistical Campaign (425 Runs)', '### 6.1 Gazebo Validation',
+    for section in ('## 6. Statistical Campaign (550 Runs)', '### 6.1 Gazebo Validation',
                     '### 6.2 Gazebo Fault Tests', 'reproduce_all.sh', 'LICENSE'):
         assert section in content, section
     assert '95% CI' in content
@@ -132,18 +132,19 @@ def test_technical_report_states_the_erratum_and_current_results():
     """The report must flag the withdrawn claims and present the current campaign."""
     content = _read(REPORT)
     assert 'Erratum' in content
-    assert 'Current M8 results (425 runs' in content
+    assert 'Current M8 results (550 runs' in content
     abstract = content[content.index('## Abstract'):content.index('## 1.')]
-    assert '425-run' in abstract
+    assert '550-run' in abstract
     assert '47.2%' not in abstract, 'the withdrawn energy claim is back in the abstract'
 
 
 def test_campaign_artifacts_presence():
-    """Committed campaign results and the four figures exist and are non-trivial."""
+    """Committed campaign results and the five figures exist and are non-trivial."""
     m8 = os.path.join(WS_DIR, 'results', 'M8')
     assert os.path.isfile(os.path.join(m8, 'campaign_summary.csv'))
     assert os.path.isfile(os.path.join(m8, 'campaign_results.json'))
     for fig in ('ablation_study_barchart.png', 'safety_comparison_apf_vs_cbf.png',
-                'difficulty_sweep_packet_drop.png', 'difficulty_sweep_latency.png'):
+                'difficulty_sweep_packet_drop.png', 'difficulty_sweep_latency.png',
+                'asymmetric_network_barchart.png'):
         path = os.path.join(m8, 'plots', fig)
         assert os.path.isfile(path) and os.path.getsize(path) > 10000, fig
