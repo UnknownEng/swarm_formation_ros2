@@ -65,8 +65,10 @@ mkdir -p "${REPRO_DIR}" "${CAMPAIGN_DIR}" "${PLOTS_DIR}"
 # Step 4: Headless Physics Simulation in Gazebo Harmonic with Rosbag Recording
 echo ">> [STEP 4/6] Launching 5-robot physics simulation in Gazebo Harmonic (35s duration)..."
 LAUNCH_LOG="${REPRO_DIR}/gazebo_launch.log"
-# setsid gives the launch its own process group so cleanup can stop exactly it
-setsid timeout 90 ros2 launch swarm_formation gazebo_swarm_launch.py \
+# setsid gives the launch its own process group so cleanup can stop exactly it.
+# Nodes run on the Gazebo clock (use_sim_time); on slow machines (e.g. WSL, RTF ~0.1)
+# 35 s of simulated time can take several minutes of wall time.
+setsid timeout 1500 ros2 launch swarm_formation gazebo_swarm_launch.py \
     headless:=true \
     sim_duration:=35.0 \
     enable_faults:=true \

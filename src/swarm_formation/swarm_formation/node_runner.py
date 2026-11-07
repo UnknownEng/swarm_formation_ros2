@@ -40,12 +40,15 @@ def run_node(node_factory: Callable[[], Node], args: Optional[List[str]] = None)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     except Exception:  # noqa: B902 - report every crash, then exit non-zero
-        exit_code = 1
-        message = f'Unhandled exception, node is shutting down:\n{traceback.format_exc()}'
-        if node is not None:
-            node.get_logger().fatal(message)
-        else:
-            print(message, file=sys.stderr)
+        # An exception raised after the context started shutting down (e.g. SIGINT from
+        # ros2 launch interrupting a message take) is a normal exit, not a crash.
+        if rclpy.ok():
+            exit_code = 1
+            message = f'Unhandled exception, node is shutting down:\n{traceback.format_exc()}'
+            if node is not None:
+                node.get_logger().fatal(message)
+            else:
+                print(message, file=sys.stderr)
     finally:
         if node is not None:
             node.destroy_node()

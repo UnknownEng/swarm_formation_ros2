@@ -30,6 +30,7 @@ from swarm_interfaces.msg import (
 from .fault_model import apply_sensor_bias
 from .node_runner import run_node
 from .relative_sensing import compute_relative_measurement, compute_relative_obstacle
+from .world_model import landmarks_in_range, static_obstacles_in_range
 
 
 class NeighborSensorNode(Node):
@@ -64,20 +65,12 @@ class NeighborSensorNode(Node):
         self.pos_y = 0.0
         self.yaw = 0.0
         self.has_own_pose = False
+        self.own_pose_time = 0.0
 
+        # Last two (time, x, y) samples per peer, to evaluate peers at the own-pose time
         self.peer_poses: Dict[int, Tuple[float, float]] = {}
+        self.peer_samples: Dict[int, List[Tuple[float, float, float]]] = {}
         self.active_sensor_fault: Optional[FaultInjection] = None
-
-        # Environmental Obstacles (Disaster Zone)
-        self.disaster_obstacles: List[Tuple[float, float, float]] = [
-            (-1.66, 1.40, 0.15),
-            (1.92, 1.87, 0.15),
-            (0.25, 1.96, 0.22),
-            (0.95, -0.33, 0.22),
-            (-1.80, -1.09, 0.16),
-            (-0.12, -1.89, 0.16),
-            (1.87, -1.24, 0.16),
-        ]
 
         # Publisher for onboard relative measurements
         self.pub_neighbors = self.create_publisher(
@@ -128,10 +121,32 @@ class NeighborSensorNode(Node):
         cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
         self.yaw = math.atan2(siny_cosp, cosy_cosp)
         self.has_own_pose = True
+        self.own_pose_time = self.get_clock().now().nanoseconds * 1e-9
 
     def _peer_pose_callback(self, msg: Pose, peer_id: int) -> None:
         """Update peer robot ground truth pose."""
         self.peer_poses[peer_id] = (msg.position.x, msg.position.y)
+        t = self.get_clock().now().nanoseconds * 1e-9
+        hist = self.peer_samples.setdefault(peer_id, [])
+        hist.append((t, msg.position.x, msg.position.y))
+        if len(hist) > 2:
+            del hist[0]
+
+    def _peer_position_at(self, peer_id: int, t: float) -> Tuple[float, float]:
+        """
+        Peer position at time t, interpolated/extrapolated from its last two samples.
+
+        Extrapolation is limited to 50 ms; with a single sample the latest pose is used.
+        """
+        hist = self.peer_samples.get(peer_id)
+        if not hist or len(hist) < 2:
+            return self.peer_poses[peer_id]
+        (t0, x0, y0), (t1, x1, y1) = hist
+        if t1 - t0 < 1e-6:
+            return x1, y1
+        tq = min(max(t, t0 - 0.05), t1 + 0.05)
+        frac = (tq - t0) / (t1 - t0)
+        return x0 + frac * (x1 - x0), y0 + frac * (y1 - y0)
 
     def _sensor_fault_callback(self, msg: FaultInjection) -> None:
         """Update active sensor fault state from fault injector node."""
@@ -151,7 +166,13 @@ class NeighborSensorNode(Node):
                 return
 
         msg = NeighborList()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        # Stamp with the time of the own pose the measurement is computed from, and
+        # evaluate peers at that same time: a real sensor measures at one instant. Using
+        # the publish time with poses of different ages (poses arrive at 50 Hz, the sensor
+        # runs at 20 Hz) gave ~9 cm measurement errors once robots moved and turned.
+        stamp_ns = int(self.own_pose_time * 1e9)
+        msg.header.stamp.sec = stamp_ns // 1_000_000_000
+        msg.header.stamp.nanosec = stamp_ns % 1_000_000_000
         msg.header.frame_id = f'robot_{self.robot_id}/base_link'
         msg.robot_id = self.robot_id
 
@@ -173,7 +194,7 @@ class NeighborSensorNode(Node):
             if peer_id not in self.peer_poses:
                 continue
 
-            target_pos = self.peer_poses[peer_id]
+            target_pos = self._peer_position_at(peer_id, self.own_pose_time)
             meas = compute_relative_measurement(
                 self_pos=self_pos,
                 self_yaw=self.yaw,
@@ -205,8 +226,10 @@ class NeighborSensorNode(Node):
                 msg.neighbors.append(n_msg)
             # Out-of-range robots are NOT added to msg.neighbors (completely invisible)
 
-        # 2. Environmental obstacle detection within finite sensing range
-        for obs_idx, (ox, oy, orad) in enumerate(self.disaster_obstacles, start=1):
+        # 2. Static obstacles and boundary walls within finite sensing range
+        for obs_idx, ox, oy, orad in static_obstacles_in_range(
+            self.pos_x, self.pos_y, self.sensing_range
+        ):
             obs_meas = compute_relative_obstacle(
                 self_pos=self_pos,
                 self_yaw=self.yaw,
@@ -235,6 +258,32 @@ class NeighborSensorNode(Node):
                 o_msg.relative_y = rel_y
                 o_msg.radius = obs_meas['radius']
                 msg.obstacles.append(o_msg)
+
+        # 3. Landmark centres (for the EKF; not used for collision avoidance)
+        for lm_id, lx, ly in landmarks_in_range(self.pos_x, self.pos_y, self.sensing_range):
+            lm_meas = compute_relative_obstacle(
+                self_pos=self_pos,
+                self_yaw=self.yaw,
+                obs_center=(lx, ly),
+                obs_radius=0.0,
+                sensing_range=self.sensing_range,
+                range_noise_std=self.range_noise_std,
+                bearing_noise_std=self.bearing_noise_std,
+                rng=self.rng,
+            )
+            if lm_meas is None:
+                continue
+            dist, bearing = lm_meas['distance'], lm_meas['bearing']
+            if range_bias != 0.0 or bearing_bias != 0.0:
+                dist, bearing = apply_sensor_bias(dist, bearing, range_bias, bearing_bias)
+            l_msg = ObstacleMeasurement()
+            l_msg.obstacle_id = lm_id
+            l_msg.distance = dist
+            l_msg.bearing = bearing
+            l_msg.relative_x = dist * math.cos(bearing)
+            l_msg.relative_y = dist * math.sin(bearing)
+            l_msg.radius = 0.0
+            msg.landmarks.append(l_msg)
 
         self.pub_neighbors.publish(msg)
 

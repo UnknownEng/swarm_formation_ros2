@@ -57,3 +57,69 @@ def compute_unicycle_twist(
     # Smooth continuous scaling: zero forward velocity when heading error >= pi/2
     speed = min(force_mag, max_lin_vel) * max(0.0, math.cos(yaw_err))
     return speed, w_cmd
+
+
+class UnicycleMapper:
+    """
+    Stateful force -> (v, w) mapping that does not spin in place at rest.
+
+    ``compute_unicycle_twist`` turns at up to ``k_yaw * heading_error`` toward any force
+    above a 0.03 deadband. Once the formation has settled, the residual forces are small
+    and change direction constantly, so the robots kept turning at up to 3 rad/s in
+    Gazebo while barely moving. This mapper adds three standard remedies:
+
+    * **Reverse driving** (optional, off by default): if the force points behind the
+      robot, drive backwards. In the kinematic sim this stopped the swarm converging (0/4),
+      because the CBF's look-ahead point always sits in front of the robot.
+    * **Force-scaled turning**: the turn rate is scaled by min(1, |f| / turn_full_force),
+      so a small force gives a gentle correction, not a full-rate spin.
+    * **Stop band with hysteresis**: below ``stop_force`` the robot stops and stays
+      stopped until the force exceeds ``resume_force``.
+    """
+
+    def __init__(
+        self,
+        k_yaw: float = 4.0,
+        max_lin_vel: float = 1.4,
+        max_ang_vel: float = 3.0,
+        allow_reverse: bool = False,
+        turn_full_force: float = 1.0,
+        stop_force: float = 0.5,
+        resume_force: float = 0.9,
+    ) -> None:
+        """Create a mapper; see the class docstring for the parameters' roles."""
+        self.k_yaw = k_yaw
+        self.max_lin_vel = max_lin_vel
+        self.max_ang_vel = max_ang_vel
+        self.allow_reverse = allow_reverse
+        self.turn_full_force = turn_full_force
+        self.stop_force = stop_force
+        self.resume_force = max(resume_force, stop_force)
+        self.stopped = True
+
+    def to_twist(self, fx: float, fy: float, current_yaw: float) -> Tuple[float, float]:
+        """Return (linear_velocity, angular_velocity) for the planar force (fx, fy)."""
+        force_mag = math.hypot(fx, fy)
+        if self.stopped:
+            if force_mag < self.resume_force:
+                return 0.0, 0.0
+            self.stopped = False
+        elif force_mag < self.stop_force:
+            self.stopped = True
+            return 0.0, 0.0
+
+        desired_yaw = math.atan2(fy, fx)
+        yaw_err = wrap_angle(desired_yaw - current_yaw)
+        direction = 1.0
+        if self.allow_reverse and abs(yaw_err) > math.pi / 2.0:
+            yaw_err = wrap_angle(yaw_err - math.pi)
+            direction = -1.0
+
+        turn_scale = 1.0
+        if self.turn_full_force > 0.0:
+            turn_scale = min(1.0, force_mag / self.turn_full_force)
+        w_cmd = self.k_yaw * yaw_err * turn_scale
+        w_cmd = max(-self.max_ang_vel, min(self.max_ang_vel, w_cmd))
+
+        speed = min(force_mag, self.max_lin_vel) * max(0.0, math.cos(yaw_err))
+        return direction * speed, w_cmd

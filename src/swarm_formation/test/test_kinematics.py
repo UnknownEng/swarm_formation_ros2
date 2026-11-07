@@ -63,3 +63,50 @@ def test_unicycle_velocity_limits():
         0.0, 10.0, current_yaw=-math.pi, max_lin_vel=1.4, max_ang_vel=3.0
     )
     assert abs(w) <= 3.0
+
+
+def test_unicycle_mapper_stays_still_for_small_residual_forces() -> None:
+    """Below the stop band the robot neither drives nor turns (no spinning at rest)."""
+    from swarm_formation.kinematics import UnicycleMapper
+
+    mapper = UnicycleMapper(stop_force=0.15, resume_force=0.30)
+    assert mapper.to_twist(0.2, 0.2, 0.0) == (0.0, 0.0)      # below resume force: stays stopped
+    v, w = mapper.to_twist(1.0, 0.0, 0.0)                     # clearly above: moves
+    assert v > 0.0 and w == 0.0
+    assert mapper.to_twist(0.05, 0.1, 0.0) == (0.0, 0.0)     # dropped below stop force: stops
+    assert mapper.to_twist(0.25, 0.0, 0.0) == (0.0, 0.0)     # hysteresis: 0.25 < resume 0.30
+
+
+def test_unicycle_mapper_scales_turn_rate_with_force() -> None:
+    """A small sideways force turns gently; a large one turns at the full rate."""
+    from swarm_formation.kinematics import UnicycleMapper
+
+    small = UnicycleMapper(stop_force=0.15, resume_force=0.30)
+    small.to_twist(1.0, 0.0, 0.0)                              # leave the stopped state
+    _, w_small = small.to_twist(0.0, 0.4, 0.0)                 # 90 deg error, |f| = 0.4
+    big = UnicycleMapper(stop_force=0.15, resume_force=0.30)
+    _, w_big = big.to_twist(0.0, 2.0, 0.0)                     # 90 deg error, |f| = 2.0
+    assert 0.0 < w_small < w_big
+    assert math.isclose(w_big, 3.0)                       # saturated at max_ang_vel
+    assert math.isclose(w_small, 4.0 * (math.pi / 2) * 0.4)
+
+
+def test_unicycle_mapper_reverse_is_opt_in() -> None:
+    """Reverse driving is off by default (it fought the CBF look-ahead point)."""
+    from swarm_formation.kinematics import UnicycleMapper
+
+    v_fwd, _ = UnicycleMapper().to_twist(-1.0, 0.0, 0.0)
+    assert v_fwd == 0.0                                   # force behind: turn, no reverse
+    v_rev, _ = UnicycleMapper(allow_reverse=True).to_twist(-1.0, 0.0, 0.0)
+    assert v_rev < 0.0
+
+
+def test_default_stop_band_ignores_residual_forces_of_a_settled_formation() -> None:
+    """Gazebo: a ~7 cm settled error gives forces of 0.4-0.9; the default band ignores them."""
+    from swarm_formation.kinematics import UnicycleMapper
+
+    mapper = UnicycleMapper()
+    for fx, fy in ((0.4, 0.1), (-0.3, 0.6), (0.0, -0.85)):
+        assert mapper.to_twist(fx, fy, 0.0) == (0.0, 0.0)
+    v, _ = mapper.to_twist(1.5, 0.0, 0.0)      # a real disturbance still gets corrected
+    assert v > 0.0

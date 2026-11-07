@@ -257,3 +257,86 @@ def compute_heartbeat_mask(
         pid: pid in store and (now - store[pid][4]) <= timeout
         for pid in known_peers
     }
+
+
+class PoseHistory:
+    """Short buffer of (time, x, y) estimated positions for delay compensation."""
+
+    def __init__(self, horizon_sec: float = 3.0) -> None:
+        """Create an empty history that keeps samples for ``horizon_sec`` seconds."""
+        self.horizon_sec = horizon_sec
+        self._samples: List[Tuple[float, float, float]] = []
+
+    def add(self, t: float, x: float, y: float) -> None:
+        """Append a position sample; samples must arrive in non-decreasing time order."""
+        if self._samples and t < self._samples[-1][0]:
+            return
+        self._samples.append((t, x, y))
+        cutoff = t - self.horizon_sec
+        drop = 0
+        while drop < len(self._samples) - 1 and self._samples[drop][0] < cutoff:
+            drop += 1
+        if drop:
+            del self._samples[:drop]
+
+    def lookup(self, t: float) -> Optional[Tuple[float, float]]:
+        """Return the position at time ``t`` (interpolated), or None if empty."""
+        if not self._samples:
+            return None
+        if t <= self._samples[0][0]:
+            return self._samples[0][1], self._samples[0][2]
+        if t >= self._samples[-1][0]:
+            return self._samples[-1][1], self._samples[-1][2]
+        lo, hi = 0, len(self._samples) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if self._samples[mid][0] <= t:
+                lo = mid
+            else:
+                hi = mid
+        t0, x0, y0 = self._samples[lo]
+        t1, x1, y1 = self._samples[hi]
+        frac = (t - t0) / max(t1 - t0, 1e-9)
+        return x0 + frac * (x1 - x0), y0 + frac * (y1 - y0)
+
+
+def compensate_delay(
+    store: Dict[int, Tuple[float, float, float, float, float]],
+    now: float,
+    own_pos_at: Callable[[float], Optional[Tuple[float, float]]],
+    peer_velocity_gain: float = 0.0,
+    max_age: float = 0.5,
+) -> Dict[int, Tuple[float, float]]:
+    """
+    Bring delayed relative measurements to the current time.
+
+    A measurement taken at t_meas is stale by age = now - t_meas. Over that time this robot
+    moved by p_i(now) - p_i(t_meas), which is known exactly from its own pose history and is
+    subtracted (no added noise). Optionally the neighbour's motion is extrapolated too:
+    its velocity is the relative velocity plus this robot's own velocity, scaled by
+    ``peer_velocity_gain`` (0 disables; the finite-difference estimate is noisy).
+
+    :param store: Neighbor table peer_id -> (dx, dy, rel_vx, rel_vy, t_meas).
+    :param now: Current time.
+    :param own_pos_at: Function returning this robot's estimated position at a time.
+    :param peer_velocity_gain: Weight of the neighbour-motion extrapolation.
+    :param max_age: Ages are clipped to this (s) so a stale entry cannot be pushed far.
+    :return: peer_id -> compensated (dx, dy).
+    """
+    p_now = own_pos_at(now)
+    out: Dict[int, Tuple[float, float]] = {}
+    for pid, (dx, dy, rvx, rvy, t_meas) in store.items():
+        age = min(max(0.0, now - t_meas), max_age)
+        p_then = own_pos_at(now - age)
+        if p_now is None or p_then is None or age <= 0.0:
+            out[pid] = (dx, dy)
+            continue
+        own_dx = p_now[0] - p_then[0]
+        own_dy = p_now[1] - p_then[1]
+        cx, cy = dx - own_dx, dy - own_dy
+        if peer_velocity_gain > 0.0:
+            own_vx, own_vy = own_dx / age, own_dy / age
+            cx += peer_velocity_gain * (rvx + own_vx) * age
+            cy += peer_velocity_gain * (rvy + own_vy) * age
+        out[pid] = (cx, cy)
+    return out

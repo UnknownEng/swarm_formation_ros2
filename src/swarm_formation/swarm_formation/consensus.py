@@ -201,3 +201,41 @@ def compute_relative_huber_consensus(
             fy_form += k_p * err_y
 
     return fx_form, fy_form, active_neighbors
+
+
+def compute_anchor_force(
+    robot_id: int,
+    total_robots: int,
+    radius: float,
+    center: Tuple[float, float],
+    est_pos: Tuple[float, float],
+    gain: float,
+    saturation: float = 1.0,
+) -> Tuple[float, float]:
+    """
+    Weak virtual-leader term pulling a robot toward its slot around a fixed centre.
+
+    Displacement consensus only controls relative positions, so with unicycle robots the
+    whole formation drifts (measured 1.2-1.7 m in 40 s in the kinematic campaign, more in
+    Gazebo, where it pinned robots against the boundary wall). This term fixes the
+    formation's position. It uses the robot's *estimated* world position from its EKF,
+    i.e. it relies on the landmark-based global localization the stack already runs.
+
+    :param robot_id: 1-based robot index (slot k sits at angle 2*pi*(k-1)/N).
+    :param total_robots: Number of robots in the formation.
+    :param radius: Formation radius in meters.
+    :param center: Agreed formation centre (x, y) in the world frame.
+    :param est_pos: Robot's estimated world position (x, y).
+    :param gain: Anchor gain (0 disables the term).
+    :param saturation: Error norm above which the pull is capped, in meters.
+    :return: Planar force (fx, fy).
+    """
+    if gain <= 0.0:
+        return 0.0, 0.0
+    angle = 2.0 * math.pi * ((robot_id - 1) % total_robots) / total_robots
+    ex = center[0] + radius * math.cos(angle) - est_pos[0]
+    ey = center[1] + radius * math.sin(angle) - est_pos[1]
+    norm = math.hypot(ex, ey)
+    if norm > saturation > 0.0:
+        ex, ey = ex * saturation / norm, ey * saturation / norm
+    return gain * ex, gain * ey

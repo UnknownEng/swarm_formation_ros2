@@ -1,0 +1,243 @@
+[INFO] [launch]: All log files can be found below /home/kali/.ros/log/2026-11-07-04-14-53-135279-QuadLover-916
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [gazebo-1]: process started with pid [920]
+[INFO] [create-2]: process started with pid [921]
+[INFO] [neighbor_sensor-3]: process started with pid [923]
+[INFO] [localization_node-4]: process started with pid [924]
+[INFO] [robot_node-5]: process started with pid [925]
+[INFO] [safety_filter-6]: process started with pid [926]
+[INFO] [create-7]: process started with pid [927]
+[INFO] [neighbor_sensor-8]: process started with pid [928]
+[INFO] [localization_node-9]: process started with pid [929]
+[INFO] [robot_node-10]: process started with pid [930]
+[INFO] [safety_filter-11]: process started with pid [931]
+[INFO] [create-12]: process started with pid [932]
+[INFO] [neighbor_sensor-13]: process started with pid [933]
+[INFO] [localization_node-14]: process started with pid [934]
+[INFO] [robot_node-15]: process started with pid [935]
+[INFO] [safety_filter-16]: process started with pid [936]
+[INFO] [create-17]: process started with pid [937]
+[INFO] [neighbor_sensor-18]: process started with pid [938]
+[INFO] [localization_node-19]: process started with pid [939]
+[INFO] [robot_node-20]: process started with pid [940]
+[INFO] [safety_filter-21]: process started with pid [941]
+[INFO] [create-22]: process started with pid [942]
+[INFO] [neighbor_sensor-23]: process started with pid [943]
+[INFO] [localization_node-24]: process started with pid [944]
+[INFO] [robot_node-25]: process started with pid [945]
+[INFO] [safety_filter-26]: process started with pid [946]
+[INFO] [network_impairment-27]: process started with pid [950]
+[INFO] [rosbag_recorder-28]: process started with pid [1034]
+[INFO] [parameter_bridge-29]: process started with pid [1051]
+[INFO] [metrics_logger-30]: process started with pid [1052]
+[parameter_bridge-29] [INFO] [1794006899.332563540] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.444770191] [gz_ros_bridge]: Creating ROS->GZ Bridge: [/model/robot_1/cmd_vel (geometry_msgs/msg/Twist) -> /model/robot_1/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.589207875] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_1/pose (gz.msgs.Pose) -> /model/robot_1/pose (geometry_msgs/msg/Pose)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.595196192] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_1/odometry (gz.msgs.Odometry) -> /model/robot_1/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.659781312] [gz_ros_bridge]: Creating ROS->GZ Bridge: [/model/robot_2/cmd_vel (geometry_msgs/msg/Twist) -> /model/robot_2/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.672015741] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_2/pose (gz.msgs.Pose) -> /model/robot_2/pose (geometry_msgs/msg/Pose)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.690760875] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_2/odometry (gz.msgs.Odometry) -> /model/robot_2/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.710226648] [gz_ros_bridge]: Creating ROS->GZ Bridge: [/model/robot_3/cmd_vel (geometry_msgs/msg/Twist) -> /model/robot_3/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.712433021] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_3/pose (gz.msgs.Pose) -> /model/robot_3/pose (geometry_msgs/msg/Pose)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.723520751] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_3/odometry (gz.msgs.Odometry) -> /model/robot_3/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.745091802] [gz_ros_bridge]: Creating ROS->GZ Bridge: [/model/robot_4/cmd_vel (geometry_msgs/msg/Twist) -> /model/robot_4/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.746177236] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_4/pose (gz.msgs.Pose) -> /model/robot_4/pose (geometry_msgs/msg/Pose)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.746758607] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_4/odometry (gz.msgs.Odometry) -> /model/robot_4/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.747386213] [gz_ros_bridge]: Creating ROS->GZ Bridge: [/model/robot_5/cmd_vel (geometry_msgs/msg/Twist) -> /model/robot_5/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.748056580] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_5/pose (gz.msgs.Pose) -> /model/robot_5/pose (geometry_msgs/msg/Pose)] (Lazy 0)
+[parameter_bridge-29] [INFO] [1794006899.748627504] [gz_ros_bridge]: Creating GZ->ROS Bridge: [/model/robot_5/odometry (gz.msgs.Odometry) -> /model/robot_5/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[create-17] [WARN] [1794006900.552428162] [spawner_robot_4]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-12] [WARN] [1794006900.572843257] [spawner_robot_3]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-7] [WARN] [1794006900.573874017] [spawner_robot_2]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-2] [WARN] [1794006900.581127808] [spawner_robot_1]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-22] [WARN] [1794006900.621085521] [spawner_robot_5]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-17] [WARN] [1794006905.552964787] [spawner_robot_4]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-12] [WARN] [1794006905.573469813] [spawner_robot_3]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-7] [WARN] [1794006905.576280611] [spawner_robot_2]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-2] [WARN] [1794006905.595741721] [spawner_robot_1]: Waiting for service [/world/collapsed_building/create] to become available ...
+[create-22] [WARN] [1794006905.628026222] [spawner_robot_5]: Waiting for service [/world/collapsed_building/create] to become available ...
+[network_impairment-27] [INFO] [1794006906.301951737] [network_impairment]: NetworkImpairmentNode online | Swarm: 5 robots | Default Drop: 0.0 | Delay: 0.0s
+[neighbor_sensor-13] [INFO] [1794006906.349814508] [neighbor_sensor_3]: NeighborSensorNode initialized for Robot 3 | Range: 6.0m | Rate: 20.0Hz
+[safety_filter-6] [INFO] [1794006906.356048508] [safety_filter_1]: SafetyFilterNode initialized for Robot 1 | Peer Dist: 0.55m | Obs Dist: 0.3m | Rate: 50.0Hz
+[localization_node-24] [INFO] [1794006906.421189642] [localization_node_5]: LocalizationNode initialized for Robot 5 | Init: (2.20, -2.20, 0.00 rad) | Rate: 50.0Hz
+[localization_node-19] [INFO] [1794006906.454392701] [localization_node_4]: LocalizationNode initialized for Robot 4 | Init: (0.00, 3.00, 0.00 rad) | Rate: 50.0Hz
+[safety_filter-21] [INFO] [1794006906.490075876] [safety_filter_4]: SafetyFilterNode initialized for Robot 4 | Peer Dist: 0.55m | Obs Dist: 0.3m | Rate: 50.0Hz
+[neighbor_sensor-3] [INFO] [1794006906.787810257] [neighbor_sensor_1]: NeighborSensorNode initialized for Robot 1 | Range: 6.0m | Rate: 20.0Hz
+[safety_filter-16] [INFO] [1794006906.835232086] [safety_filter_3]: SafetyFilterNode initialized for Robot 3 | Peer Dist: 0.55m | Obs Dist: 0.3m | Rate: 50.0Hz
+[localization_node-4] [INFO] [1794006907.185868605] [localization_node_1]: LocalizationNode initialized for Robot 1 | Init: (-3.00, 0.00, 0.00 rad) | Rate: 50.0Hz
+[safety_filter-11] [INFO] [1794006907.254971509] [safety_filter_2]: SafetyFilterNode initialized for Robot 2 | Peer Dist: 0.55m | Obs Dist: 0.3m | Rate: 50.0Hz
+[localization_node-9] [INFO] [1794006907.256452372] [localization_node_2]: LocalizationNode initialized for Robot 2 | Init: (3.00, 0.00, 0.00 rad) | Rate: 50.0Hz
+[neighbor_sensor-23] [INFO] [1794006907.523801574] [neighbor_sensor_5]: NeighborSensorNode initialized for Robot 5 | Range: 6.0m | Rate: 20.0Hz
+[neighbor_sensor-18] [INFO] [1794006907.526833048] [neighbor_sensor_4]: NeighborSensorNode initialized for Robot 4 | Range: 6.0m | Rate: 20.0Hz
+[neighbor_sensor-8] [INFO] [1794006907.598808333] [neighbor_sensor_2]: NeighborSensorNode initialized for Robot 2 | Range: 6.0m | Rate: 20.0Hz
+[localization_node-14] [INFO] [1794006907.601314062] [localization_node_3]: LocalizationNode initialized for Robot 3 | Init: (0.00, -3.00, 0.00 rad) | Rate: 50.0Hz
+[create-17] [INFO] [1794006907.714419950] [spawner_robot_4]: Entity creation successful.
+[rosbag_recorder-28] [WARN] [ros2bag]: Positional "topics" argument deprecated. Please use optional "--topics" argument instead.
+[safety_filter-26] [INFO] [1794006907.904774656] [safety_filter_5]: SafetyFilterNode initialized for Robot 5 | Peer Dist: 0.55m | Obs Dist: 0.3m | Rate: 50.0Hz
+[create-2] [INFO] [1794006907.915521128] [spawner_robot_1]: Entity creation successful.
+[INFO] [create-17]: process has finished cleanly [pid 937]
+[create-22] [INFO] [1794006908.025616829] [spawner_robot_5]: Entity creation successful.
+[create-12] [INFO] [1794006908.117940462] [spawner_robot_3]: Entity creation successful.
+[create-7] [INFO] [1794006908.121102146] [spawner_robot_2]: Entity creation successful.
+[INFO] [create-2]: process has finished cleanly [pid 921]
+[INFO] [create-22]: process has finished cleanly [pid 942]
+[INFO] [create-12]: process has finished cleanly [pid 932]
+[INFO] [create-7]: process has finished cleanly [pid 927]
+[rosbag_recorder-28] stdin is not a terminal device. Keyboard handling disabled.[INFO] [1794006908.850320230] [rosbag2_recorder]: Press SPACE for pausing/resuming
+[rosbag_recorder-28] [INFO] [1794006908.855131795] [rosbag2_recorder]: Event publisher thread: Started
+[metrics_logger-30] [INFO] [1794006909.491907575] [swarm_metrics_logger]: SwarmMetricsLogger started | Exporting to: /home/kali/swarm_ws/results/phaseC/diag_anchor_odom.csv | Total Robots: 5 | Threshold: 0.25m
+[rosbag_recorder-28] [INFO] [1794006909.698255764] [rosbag2_recorder]: Starting recording to '/home/kali/swarm_ws/results/phaseC/diag_anchor_odom_bag'
+[rosbag_recorder-28] [INFO] [1794006909.738229783] [rosbag2_recorder]: Listening for topics...
+[rosbag_recorder-28] [INFO] [1794006909.738313566] [rosbag2_recorder]: Recording...
+[rosbag_recorder-28] [INFO] [1794006909.743084053] [rosbag2_recorder]: Topics discovery started.
+[rosbag_recorder-28] [INFO] [1794006909.743182465] [rosbag2_recorder]: use_sim_time set, waiting for /clock before starting recording...
+[robot_node-5] [INFO] [1794006910.418071115] [gazebo_node_1]: GazeboSwarmNode 1/5 ready | Relative Sensing: Active | Resilient: False
+[robot_node-10] [INFO] [1794006910.539198381] [gazebo_node_2]: GazeboSwarmNode 2/5 ready | Relative Sensing: Active | Resilient: False
+[robot_node-25] [INFO] [1794006910.639684468] [gazebo_node_5]: GazeboSwarmNode 5/5 ready | Relative Sensing: Active | Resilient: False
+[robot_node-15] [INFO] [1794006910.760767200] [gazebo_node_3]: GazeboSwarmNode 3/5 ready | Relative Sensing: Active | Resilient: False
+[robot_node-20] [INFO] [1794006910.766061586] [gazebo_node_4]: GazeboSwarmNode 4/5 ready | Relative Sensing: Active | Resilient: False
+[rosbag_recorder-28] [INFO] [1794006911.364934502] [rosbag2_recorder]: Sim time /clock found, starting recording.
+[rosbag_recorder-28] [INFO] [1794006911.414069647] [rosbag2_recorder]: Subscribed to topic '/robot_4/cmd_vel'
+[rosbag_recorder-28] [INFO] [1794006911.438196020] [rosbag2_recorder]: Subscribed to topic '/robot_3/pose'
+[parameter_bridge-29] [INFO] [1794006911.475461402] [gz_ros_bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[rosbag_recorder-28] [INFO] [1794006911.481383331] [rosbag2_recorder]: Subscribed to topic '/robot_3/neighbors'
+[rosbag_recorder-28] [INFO] [1794006911.495847523] [rosbag2_recorder]: Subscribed to topic '/robot_2/safety_intervention'
+[rosbag_recorder-28] [INFO] [1794006911.504053689] [rosbag2_recorder]: Subscribed to topic '/robot_4/safety_intervention'
+[rosbag_recorder-28] [INFO] [1794006911.515651760] [rosbag2_recorder]: Subscribed to topic '/robot_2/neighbors_raw'
+[rosbag_recorder-28] [INFO] [1794006911.528317031] [rosbag2_recorder]: Subscribed to topic '/robot_2/pose'
+[rosbag_recorder-28] [INFO] [1794006911.549652061] [rosbag2_recorder]: Subscribed to topic '/robot_2/nav_debug'
+[rosbag_recorder-28] [INFO] [1794006911.567021713] [rosbag2_recorder]: Subscribed to topic '/clock'
+[rosbag_recorder-28] [INFO] [1794006911.569926817] [rosbag2_recorder]: Subscribed to topic '/robot_1/pose'
+[rosbag_recorder-28] [INFO] [1794006911.587460054] [rosbag2_recorder]: Subscribed to topic '/network/status'
+[rosbag_recorder-28] [INFO] [1794006911.623927730] [rosbag2_recorder]: Subscribed to topic '/robot_1/odom'
+[rosbag_recorder-28] [INFO] [1794006911.639869601] [rosbag2_recorder]: Subscribed to topic '/robot_1/cmd_vel'
+[rosbag_recorder-28] [INFO] [1794006911.646757170] [rosbag2_recorder]: Subscribed to topic '/robot_2/estimation_error'
+[rosbag_recorder-28] [INFO] [1794006911.667260803] [rosbag2_recorder]: Subscribed to topic '/robot_3/nav_debug'
+[rosbag_recorder-28] [INFO] [1794006911.671068032] [rosbag2_recorder]: Subscribed to topic '/robot_4/pose'
+[rosbag_recorder-28] [INFO] [1794006911.675579720] [rosbag2_recorder]: Subscribed to topic '/robot_5/neighbors_raw'
+[rosbag_recorder-28] [INFO] [1794006911.683958996] [rosbag2_recorder]: Subscribed to topic '/robot_5/odom'
+[rosbag_recorder-28] [INFO] [1794006911.688373475] [rosbag2_recorder]: Subscribed to topic '/robot_4/estimation_error'
+[rosbag_recorder-28] [INFO] [1794006911.699218194] [rosbag2_recorder]: Subscribed to topic '/robot_2/cmd_vel'
+[rosbag_recorder-28] [INFO] [1794006911.704072544] [rosbag2_recorder]: Subscribed to topic '/robot_5/neighbors'
+[rosbag_recorder-28] [INFO] [1794006911.714567939] [rosbag2_recorder]: Subscribed to topic '/robot_4/odom'
+[rosbag_recorder-28] [INFO] [1794006911.724164690] [rosbag2_recorder]: Subscribed to topic '/robot_5/cmd_vel_raw'
+[rosbag_recorder-28] [INFO] [1794006911.776498715] [rosbag2_recorder]: Subscribed to topic '/swarm/visualization'
+[rosbag_recorder-28] [INFO] [1794006911.783307857] [rosbag2_recorder]: Subscribed to topic '/robot_1/neighbors_raw'
+[rosbag_recorder-28] [INFO] [1794006911.798194642] [rosbag2_recorder]: Subscribed to topic '/robot_5/cmd_vel'
+[rosbag_recorder-28] [INFO] [1794006911.820000479] [rosbag2_recorder]: Subscribed to topic '/robot_5/estimated_pose'
+[rosbag_recorder-28] [INFO] [1794006911.837526682] [rosbag2_recorder]: Subscribed to topic '/robot_1/safety_intervention'
+[rosbag_recorder-28] [INFO] [1794006911.855149076] [rosbag2_recorder]: Subscribed to topic '/robot_5/estimation_error'
+[rosbag_recorder-28] [INFO] [1794006911.864551758] [rosbag2_recorder]: Subscribed to topic '/robot_4/neighbors'
+[rosbag_recorder-28] [INFO] [1794006911.874694094] [rosbag2_recorder]: Subscribed to topic '/robot_5/pose'
+[rosbag_recorder-28] [INFO] [1794006911.884957401] [rosbag2_recorder]: Subscribed to topic '/robot_5/nav_debug'
+[rosbag_recorder-28] [INFO] [1794006911.891929492] [rosbag2_recorder]: Subscribed to topic '/robot_4/estimated_pose'
+[rosbag_recorder-28] [INFO] [1794006911.900212492] [rosbag2_recorder]: Subscribed to topic '/robot_2/cmd_vel_raw'
+[rosbag_recorder-28] [INFO] [1794006911.917864735] [rosbag2_recorder]: Subscribed to topic '/robot_3/odom'
+[rosbag_recorder-28] [INFO] [1794006911.930706588] [rosbag2_recorder]: Subscribed to topic '/robot_2/estimated_pose'
+[rosbag_recorder-28] [INFO] [1794006911.936612567] [rosbag2_recorder]: Subscribed to topic '/robot_3/estimated_pose'
+[rosbag_recorder-28] [INFO] [1794006911.940976003] [rosbag2_recorder]: Subscribed to topic '/robot_1/neighbors'
+[rosbag_recorder-28] [INFO] [1794006911.953295769] [rosbag2_recorder]: Subscribed to topic '/robot_1/estimated_pose'
+[rosbag_recorder-28] [INFO] [1794006911.963064023] [rosbag2_recorder]: Subscribed to topic '/robot_3/estimation_error'
+[rosbag_recorder-28] [INFO] [1794006911.971529541] [rosbag2_recorder]: Subscribed to topic '/robot_5/safety_intervention'
+[rosbag_recorder-28] [INFO] [1794006911.983234835] [rosbag2_recorder]: Subscribed to topic '/robot_1/estimation_error'
+[rosbag_recorder-28] [INFO] [1794006911.999548265] [rosbag2_recorder]: Subscribed to topic '/robot_2/neighbors'
+[rosbag_recorder-28] [INFO] [1794006912.022013264] [rosbag2_recorder]: Subscribed to topic '/robot_3/cmd_vel_raw'
+[rosbag_recorder-28] [INFO] [1794006912.038827004] [rosbag2_recorder]: Subscribed to topic '/robot_3/neighbors_raw'
+[rosbag_recorder-28] [INFO] [1794006912.053086354] [rosbag2_recorder]: Subscribed to topic '/robot_2/odom'
+[rosbag_recorder-28] [INFO] [1794006912.599519796] [rosbag2_recorder]: Subscribed to topic '/robot_3/cmd_vel'
+[rosbag_recorder-28] [INFO] [1794006912.615936128] [rosbag2_recorder]: Subscribed to topic '/robot_4/neighbors_raw'
+[rosbag_recorder-28] [INFO] [1794006912.630748347] [rosbag2_recorder]: Subscribed to topic '/robot_1/nav_debug'
+[rosbag_recorder-28] [INFO] [1794006912.640635629] [rosbag2_recorder]: Subscribed to topic '/robot_4/nav_debug'
+[rosbag_recorder-28] [INFO] [1794006912.657379885] [rosbag2_recorder]: Subscribed to topic '/robot_3/safety_intervention'
+[rosbag_recorder-28] [INFO] [1794006912.670101775] [rosbag2_recorder]: Subscribed to topic '/robot_1/cmd_vel_raw'
+[rosbag_recorder-28] [INFO] [1794006912.689448857] [rosbag2_recorder]: Subscribed to topic '/robot_4/cmd_vel_raw'
+[metrics_logger-30] [INFO] [1794006926.880531803] [swarm_metrics_logger]: [t=  2.0s] Shape Err:  2.926m | Min Dist: 2.184m (Global: 2.184m) | Est Err: 0.0109m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794006941.766277609] [swarm_metrics_logger]: [t=  4.0s] Shape Err:  1.904m | Min Dist: 1.324m (Global: 1.322m) | Est Err: 0.0236m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794006960.381266668] [swarm_metrics_logger]: [t=  6.1s] Shape Err:  1.193m | Min Dist: 1.045m (Global: 1.045m) | Est Err: 0.0099m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794006988.326554398] [swarm_metrics_logger]: [t=  8.1s] Shape Err:  0.762m | Min Dist: 1.083m (Global: 0.911m) | Est Err: 0.0178m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794007005.722063015] [swarm_metrics_logger]: [t= 10.1s] Shape Err:  0.378m | Min Dist: 1.779m (Global: 0.911m) | Est Err: 0.0119m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794007026.031630932] [swarm_metrics_logger]: [t= 12.1s] Shape Err:  0.280m | Min Dist: 1.611m (Global: 0.911m) | Est Err: 0.0124m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794007047.382211382] [swarm_metrics_logger]: [t= 14.1s] Shape Err:  0.127m | Min Dist: 2.021m (Global: 0.911m) | Est Err: 0.0127m | Collisions: 0 | Converged: CONVERGING...
+[metrics_logger-30] [INFO] [1794007054.432883040] [swarm_metrics_logger]: >>> SWARM CONVERGED! Settle Time: 13.01s | RMS Error: 0.174m <<<
+[metrics_logger-30] [INFO] [1794007061.881624138] [swarm_metrics_logger]: [t= 16.2s] Shape Err:  0.196m | Min Dist: 1.795m (Global: 0.911m) | Est Err: 0.0064m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007079.512752737] [swarm_metrics_logger]: [t= 18.2s] Shape Err:  0.186m | Min Dist: 1.833m (Global: 0.911m) | Est Err: 0.0152m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007100.944948600] [swarm_metrics_logger]: [t= 20.2s] Shape Err:  0.204m | Min Dist: 2.049m (Global: 0.911m) | Est Err: 0.0171m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007114.595362881] [swarm_metrics_logger]: [t= 22.2s] Shape Err:  0.265m | Min Dist: 1.941m (Global: 0.911m) | Est Err: 0.0115m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007128.198638764] [swarm_metrics_logger]: [t= 24.3s] Shape Err:  0.353m | Min Dist: 1.771m (Global: 0.911m) | Est Err: 0.0112m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007145.980611324] [swarm_metrics_logger]: [t= 26.3s] Shape Err:  0.415m | Min Dist: 1.988m (Global: 0.911m) | Est Err: 0.0078m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007157.482394447] [swarm_metrics_logger]: [t= 28.3s] Shape Err:  0.245m | Min Dist: 1.789m (Global: 0.911m) | Est Err: 0.0109m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007171.915932504] [swarm_metrics_logger]: [t= 30.4s] Shape Err:  0.178m | Min Dist: 1.918m (Global: 0.911m) | Est Err: 0.0134m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007193.899907453] [swarm_metrics_logger]: [t= 32.4s] Shape Err:  0.047m | Min Dist: 2.274m (Global: 0.911m) | Est Err: 0.0140m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007214.688264759] [swarm_metrics_logger]: [t= 34.4s] Shape Err:  0.107m | Min Dist: 2.187m (Global: 0.911m) | Est Err: 0.0168m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007232.431895158] [swarm_metrics_logger]: [t= 36.4s] Shape Err:  0.081m | Min Dist: 2.187m (Global: 0.911m) | Est Err: 0.0067m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007252.282033325] [swarm_metrics_logger]: [t= 38.4s] Shape Err:  0.074m | Min Dist: 2.188m (Global: 0.911m) | Est Err: 0.0173m | Collisions: 0 | Converged: YES (13.01s)
+[metrics_logger-30] [INFO] [1794007266.884072485] [swarm_metrics_logger]: 
+[metrics_logger-30] ======================================================================
+[metrics_logger-30]            SWARM FORMATION EXPERIMENT SUMMARY REPORT
+[metrics_logger-30] ======================================================================
+[metrics_logger-30]  Configuration:       Part 1: Baseline Consensus
+[metrics_logger-30]  Total Swarm Agents:  5
+[metrics_logger-30]  Final Shape Error:   0.0969 m (RMS)
+[metrics_logger-30]  Convergence Status:  CONVERGED at t = 13.01 s
+[metrics_logger-30]  Global Min Distance: 0.9112 m (Safety Limit: 0.50 m)
+[metrics_logger-30]  Mean Est Error:      0.0121 m
+[metrics_logger-30]  Total Collisions:    0 crash events detected
+[metrics_logger-30]  Metrics Saved:       /home/kali/swarm_ws/results/phaseC/diag_anchor_odom.csv
+[metrics_logger-30] ======================================================================
+[metrics_logger-30] 
+[INFO] [metrics_logger-30]: process has finished cleanly [pid 1052]
+[INFO] [parameter_bridge-29]: sending signal 'SIGINT' to process[parameter_bridge-29]
+[INFO] [rosbag_recorder-28]: sending signal 'SIGINT' to process[rosbag_recorder-28]
+[INFO] [network_impairment-27]: sending signal 'SIGINT' to process[network_impairment-27]
+[INFO] [safety_filter-26]: sending signal 'SIGINT' to process[safety_filter-26]
+[INFO] [robot_node-25]: sending signal 'SIGINT' to process[robot_node-25]
+[INFO] [localization_node-24]: sending signal 'SIGINT' to process[localization_node-24]
+[INFO] [neighbor_sensor-23]: sending signal 'SIGINT' to process[neighbor_sensor-23]
+[INFO] [safety_filter-21]: sending signal 'SIGINT' to process[safety_filter-21]
+[INFO] [parameter_bridge-29]: process has finished cleanly [pid 1051]
+[INFO] [robot_node-20]: sending signal 'SIGINT' to process[robot_node-20]
+[INFO] [localization_node-19]: sending signal 'SIGINT' to process[localization_node-19]
+[INFO] [neighbor_sensor-18]: sending signal 'SIGINT' to process[neighbor_sensor-18]
+[INFO] [safety_filter-16]: sending signal 'SIGINT' to process[safety_filter-16]
+[INFO] [robot_node-15]: sending signal 'SIGINT' to process[robot_node-15]
+[INFO] [localization_node-14]: sending signal 'SIGINT' to process[localization_node-14]
+[INFO] [neighbor_sensor-13]: sending signal 'SIGINT' to process[neighbor_sensor-13]
+[INFO] [safety_filter-11]: sending signal 'SIGINT' to process[safety_filter-11]
+[INFO] [robot_node-10]: sending signal 'SIGINT' to process[robot_node-10]
+[INFO] [localization_node-9]: sending signal 'SIGINT' to process[localization_node-9]
+[INFO] [neighbor_sensor-8]: sending signal 'SIGINT' to process[neighbor_sensor-8]
+[INFO] [safety_filter-6]: sending signal 'SIGINT' to process[safety_filter-6]
+[INFO] [robot_node-5]: sending signal 'SIGINT' to process[robot_node-5]
+[INFO] [localization_node-4]: sending signal 'SIGINT' to process[localization_node-4]
+[INFO] [neighbor_sensor-3]: sending signal 'SIGINT' to process[neighbor_sensor-3]
+[INFO] [safety_filter-26]: process has finished cleanly [pid 946]
+[INFO] [network_impairment-27]: process has finished cleanly [pid 950]
+[INFO] [robot_node-25]: process has finished cleanly [pid 945]
+[INFO] [gazebo-1]: sending signal 'SIGINT' to process[gazebo-1]
+[INFO] [localization_node-24]: process has finished cleanly [pid 944]
+[parameter_bridge-29] [INFO] [1794007268.140293670] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[rosbag_recorder-28] [INFO] [1794007268.165385569] [rosbag2_recorder]: Topics discovery stopped.
+[rosbag_recorder-28] [INFO] [1794007268.165861412] [rosbag2_recorder]: Pausing recording.
+[rosbag_recorder-28] [INFO] [1794007268.352497897] [rosbag2_recorder]: Recording stopped
+[rosbag_recorder-28] [INFO] [1794007268.672325897] [rosbag2_recorder]: Event publisher thread: Exited
+[INFO] [safety_filter-21]: process has finished cleanly [pid 941]
+[INFO] [robot_node-20]: process has finished cleanly [pid 940]
+[INFO] [neighbor_sensor-23]: process has finished cleanly [pid 943]
+[INFO] [localization_node-19]: process has finished cleanly [pid 939]
+[INFO] [neighbor_sensor-18]: process has finished cleanly [pid 938]
+[INFO] [safety_filter-11]: process has finished cleanly [pid 931]
+[INFO] [safety_filter-16]: process has finished cleanly [pid 936]
+[INFO] [localization_node-14]: process has finished cleanly [pid 934]
+[INFO] [neighbor_sensor-8]: process has finished cleanly [pid 928]
+[INFO] [robot_node-10]: process has finished cleanly [pid 930]
+[INFO] [robot_node-15]: process has finished cleanly [pid 935]
+[INFO] [neighbor_sensor-13]: process has finished cleanly [pid 933]
+[INFO] [rosbag_recorder-28]: process has finished cleanly [pid 1034]
+[INFO] [localization_node-9]: process has finished cleanly [pid 929]
+[INFO] [safety_filter-6]: process has finished cleanly [pid 926]
+[INFO] [robot_node-5]: process has finished cleanly [pid 925]
+[INFO] [neighbor_sensor-3]: process has finished cleanly [pid 923]
+[INFO] [localization_node-4]: process has finished cleanly [pid 924]
+[ERROR] [gazebo-1]: process[gazebo-1] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[INFO] [gazebo-1]: sending signal 'SIGTERM' to process[gazebo-1]
+[ERROR] [gazebo-1]: process has died [pid 920, exit code -15, cmd 'ruby /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz sim -r -s /home/kali/swarm_ws/src/swarm_formation/worlds/collapsed_building.sdf --force-version 8'].

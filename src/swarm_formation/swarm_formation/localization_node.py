@@ -30,6 +30,7 @@ from swarm_interfaces.msg import NeighborList
 from .kinematics import wrap_angle
 from .localization import compute_estimation_error, RobotEKF
 from .node_runner import run_node
+from .world_model import landmark_positions
 
 
 class LocalizationNode(Node):
@@ -75,20 +76,17 @@ class LocalizationNode(Node):
         self.last_predict_time: Optional[float] = None
         self.current_v = 0.0
         self.current_w = 0.0
+        self.last_odom_time: Optional[float] = None
+        self.odom_timeout = 0.25  # s without odometry before falling back to cmd_vel
+        self.warned_no_odom = False
+        self.start_time: Optional[float] = None
 
         # Peer estimated poses: peer_id -> (x, y, yaw, timestamp)
         self.peer_estimates: Dict[int, Tuple[float, float, float, float]] = {}
 
         # Known environmental landmarks in world frame: obstacle_id -> (ox, oy, radius)
-        self.known_landmarks: Dict[int, Tuple[float, float, float]] = {
-            1: (-1.66, 1.40, 0.15),
-            2: (1.92, 1.87, 0.15),
-            3: (0.25, 1.96, 0.22),
-            4: (0.95, -0.33, 0.22),
-            5: (-1.80, -1.09, 0.16),
-            6: (-0.12, -1.89, 0.16),
-            7: (1.87, -1.24, 0.16),
-        }
+        # (walls are sensed too, but their closest point moves, so they are not landmarks)
+        self.known_landmarks: Dict[int, Tuple[float, float]] = landmark_positions()
 
         # Ground truth tracking for evaluation only
         self.has_ground_truth = False
@@ -154,6 +152,7 @@ class LocalizationNode(Node):
 
     def _odom_callback(self, msg: Odometry) -> None:
         """Update velocity inputs and fused heading from wheel odometry."""
+        self.last_odom_time = self.get_clock().now().nanoseconds * 1e-9
         self.current_v = msg.twist.twist.linear.x
         self.current_w = msg.twist.twist.angular.z
 
@@ -169,8 +168,14 @@ class LocalizationNode(Node):
         self.ekf.update_heading(total_yaw, var_yaw=0.01)
 
     def _cmd_vel_callback(self, msg: Twist) -> None:
-        """Update velocity input fallback if odometry is delayed."""
-        if self.current_v == 0.0 and self.current_w == 0.0:
+        """
+        Use the commanded velocity as prediction input while odometry is missing or stale.
+
+        (The old rule only accepted a command while the stored velocity was exactly zero,
+        so without odometry the EKF dead-reckoned with the first command forever.)
+        """
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if self.last_odom_time is None or now - self.last_odom_time > self.odom_timeout:
             self.current_v = msg.linear.x
             self.current_w = msg.angular.z
 
@@ -210,10 +215,10 @@ class LocalizationNode(Node):
         """Process onboard relative measurements and execute EKF correction step."""
         # 1. Update with known environmental landmarks
         if self.use_landmarks:
-            for obs in msg.obstacles:
+            for obs in msg.landmarks:
                 o_id = obs.obstacle_id
                 if o_id in self.known_landmarks:
-                    lx, ly, _ = self.known_landmarks[o_id]
+                    lx, ly = self.known_landmarks[o_id]
                     self.ekf.update_range_bearing(
                         target_x=lx,
                         target_y=ly,
@@ -249,6 +254,19 @@ class LocalizationNode(Node):
 
         dt = now - self.last_predict_time
         self.last_predict_time = now
+
+        if self.start_time is None:
+            self.start_time = now
+        if (
+            self.last_odom_time is None
+            and not self.warned_no_odom
+            and now - self.start_time > 5.0
+        ):
+            self.warned_no_odom = True
+            self.get_logger().warn(
+                f'No wheel odometry on /robot_{self.robot_id}/odom after 5 s: the EKF is '
+                'dead-reckoning on commanded velocities only (check the gz bridge).'
+            )
 
         # EKF Prediction step
         self.ekf.predict(self.current_v, self.current_w, dt)

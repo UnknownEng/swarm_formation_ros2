@@ -56,12 +56,16 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     use_safety_filter_str = LaunchConfiguration('use_safety_filter').perform(context).lower()
     record_bag_str = LaunchConfiguration('record_bag').perform(context).lower()
     bag_path_arg = LaunchConfiguration('bag_path').perform(context)
+    use_sim_time_str = LaunchConfiguration('use_sim_time').perform(context).lower()
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
     use_resilient = use_resilient_str in ['true', '1', 'yes']
     use_safety_filter = use_safety_filter_str in ['true', '1', 'yes']
     record_bag = record_bag_str in ['true', '1', 'yes']
+    # Gazebo can run far below real time (RTF ~0.05 was measured under WSL with 4 cores).
+    # Nodes on the wall clock then see huge artificial lag; on /clock they do not.
+    use_sim_time = use_sim_time_str in ['true', '1', 'yes']
     radius = float(radius_str)
     sensing_range = float(sensing_range_str)
     sim_duration = float(sim_duration_str)
@@ -168,7 +172,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         bridge_args.append(f'/model/robot_{i}/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist')
         bridge_args.append(f'/model/robot_{i}/pose@geometry_msgs/msg/Pose[gz.msgs.Pose')
         bridge_args.append(
-            f'/model/robot_{i}/odometry@nav_msgs/msg/Odometry[gz.msgs.OdometryWithCovariance'
+            f'/model/robot_{i}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
         )
         bridge_remappings.append((f'/model/robot_{i}/cmd_vel', f'/robot_{i}/cmd_vel'))
         bridge_remappings.append((f'/model/robot_{i}/pose', f'/robot_{i}/pose'))
@@ -187,6 +191,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             'controller_type': controller_type_str,
             'formation_radius': radius,
             'sensing_range': sensing_range,
+            'use_sim_time': use_sim_time,
         })
 
         # Relative Neighbor & Obstacle Sensor Node (M1)
@@ -256,6 +261,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
                 'default_delay_sec': default_delay,
                 'default_jitter_sec': default_jitter,
                 'enable_faults': enable_faults,
+                'use_sim_time': use_sim_time,
             },
         ],
     )
@@ -272,6 +278,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
                 'fault_profile': fault_profile,
                 'total_robots': total_robots,
                 'update_rate': 20.0,
+                'use_sim_time': use_sim_time,
             }],
         )
         actions.append(fault_node)
@@ -302,6 +309,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
             'auto_shutdown_sec': sim_duration,
             'enable_faults': enable_faults,
             'use_resilient_method': use_resilient,
+            'use_sim_time': use_sim_time,
         }],
     )
     actions.append(TimerAction(period=3.5, actions=[metrics_node]))
@@ -327,12 +335,13 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
                 f'/robot_{i}/neighbors_raw',
                 f'/robot_{i}/motor_kill',
                 f'/robot_{i}/sensor_fault',
+                f'/robot_{i}/nav_debug',
             ])
         bag_cmd = [
             'ros2', 'bag', 'record',
             '-o', bag_out,
             '--max-cache-size', '0',
-        ] + topics_to_record
+        ] + (['--use-sim-time'] if use_sim_time else []) + topics_to_record
         actions.append(
             TimerAction(
                 period=1.0,
@@ -432,6 +441,12 @@ def generate_launch_description() -> LaunchDescription:
             'record_bag',
             default_value='false',
             description='Enable automatic recording of swarm topics with ros2 bag.',
+        ),
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='true',
+            description='Run all nodes on the Gazebo /clock (recommended; required when '
+                        'Gazebo runs slower than real time).',
         ),
         DeclareLaunchArgument(
             'bag_path',

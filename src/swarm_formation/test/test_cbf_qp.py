@@ -245,3 +245,19 @@ def test_symmetric_head_on_does_not_deadlock() -> None:
     assert min_dist >= 0.50
     for i in range(2):
         assert math.hypot(goal[i][0] - p[i][0], goal[i][1] - p[i][1]) < 0.2, 'deadlocked'
+
+
+def test_pure_rotation_passes_even_next_to_an_obstacle() -> None:
+    """Turning in place cannot reduce any distance, so the filter must not block it."""
+    v, w, interv = compute_cbf_safe_twist(
+        v_raw=0.0, w_raw=3.0, robot_yaw=0.0,
+        relative_peers={2: (0.0, 0.70)},           # peer close beside the robot
+        relative_obstacles=[(0.45, 0.0, 0.0)],     # obstacle surface just ahead
+    )
+    assert v == 0.0 and w == 3.0 and interv == 0.0
+    # Forward motion in the same situation is still filtered
+    v_f, _, interv_f = compute_cbf_safe_twist(
+        v_raw=1.0, w_raw=0.0, robot_yaw=0.0,
+        relative_peers={2: (0.0, 0.70)}, relative_obstacles=[(0.45, 0.0, 0.0)],
+    )
+    assert interv_f > 0.0 and v_f < 1.0

@@ -261,7 +261,7 @@ def compute_cbf_safe_twist(
     relative_peers: Dict[int, Tuple[float, float]],
     relative_obstacles: List[Tuple[float, float, float]],
     safety_dist_peer: float = 0.55,
-    safety_dist_obs: float = 0.35,
+    safety_dist_obs: float = 0.30,
     gamma_peer: float = 1.5,
     gamma_obs: float = 2.0,
     delay_bound_sec: float = 0.05,
@@ -305,6 +305,14 @@ def compute_cbf_safe_twist(
     :return: Tuple of (safe_v, safe_w, intervention_norm).
     """
     del yaw_gain_kyaw
+
+    # 0. Pure rotation in place cannot move the robot centre, so it cannot reduce any
+    #    centre-to-centre or centre-to-obstacle distance. The look-ahead barrier would still
+    #    block it (rotating swings the look-ahead point sideways), which in Gazebo left a
+    #    robot unable to turn toward a force behind it and stuck for 8+ s. Pass it through.
+    if abs(v_raw) < 1e-6:
+        return 0.0, max(-max_angular_vel, min(max_angular_vel, w_raw)), 0.0
+
     ell = max(1e-3, lookahead_dist)
     cos_h = math.cos(robot_yaw)
     sin_h = math.sin(robot_yaw)
@@ -337,18 +345,21 @@ def compute_cbf_safe_twist(
     )
     all_constraints = peer_constraints + obs_constraints
 
-    # 3. Deadlock breaking: if the nominal command pushes into a barrier, add a
-    #    tangential component (all robots turn the same way, like a roundabout).
+    # 3. Deadlock breaking: if the nominal command pushes into any barrier, add a
+    #    tangential component around nearby *peers* (all robots turn the same way, like a
+    #    roundabout). Biasing around static obstacles too was tested and made jams in the
+    #    rubble field worse (0/4 vs 3/4 runs converging), so obstacles get no bias.
     nom_x, nom_y = u0_x, u0_y
     speed_nom = math.hypot(u0_x, u0_y)
     if (
         deadlock_bias > 0.0
         and speed_nom > 1e-6
-        and peer_constraints
-        and _max_violation(u0_x, u0_y, peer_constraints) > 0.0
+        and all_constraints
+        and _max_violation(u0_x, u0_y, all_constraints) > 0.0
     ):
-        d_eff = safety_dist_peer + ell + 2.0 * max_linear_vel * delay_bound_sec
-        for (qx, qy) in peers_from_q.values():
+        d_peer = safety_dist_peer + ell + 2.0 * max_linear_vel * delay_bound_sec
+        for qx, qy in peers_from_q.values():
+            d_eff = d_peer
             dist = math.hypot(qx, qy)
             if dist < 1e-6:
                 continue

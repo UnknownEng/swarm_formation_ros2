@@ -86,7 +86,7 @@ class CampaignVisualizer:
         fig.suptitle(
             'Leave-one-out ablation under nominal impairment '
             f'(15% drop, 80+/-40 ms delay, noise; {self._num_seeds()} seeds)',
-                     fontsize=14, fontweight='bold')
+            fontsize=14, fontweight='bold')
 
         x_pos = np.arange(len(labels))
         colors = ['#94a3b8', '#60a5fa', '#38bdf8', '#818cf8', '#22c55e']

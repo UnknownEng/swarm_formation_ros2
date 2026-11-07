@@ -19,7 +19,7 @@ This repository delivers a ROS 2 / Gazebo robotics software framework for **dece
 
 A swarm of **5 nonholonomic differential-drive mobile robots** autonomously self-organizes into a regular pentagon ($R = 2.0\,\text{m}$) without any central coordinator, global GPS/mocap positioning, or designated leader.
 
-> **Validation status (2026-11-07):** the statistical results in Section 6 come from a headless kinematic simulator that mirrors the ROS node pipeline. The look-ahead CBF and deadlock fix have **not yet been re-run in Gazebo**. Every committed Gazebo run that used the old safety layer ended without reaching the formation (`results/M6`, `results/M7`, `results/re_eval`).
+> **Validation status (2026-11-07):** in Gazebo (Section 6.1), with the default configuration the formation converges in 7.9 s to a 0.060 m final shape error (threshold 0.25 m) without collisions on a clean channel, and the robots then stand still. Under the launch file's fault settings (Section 6.2: 15% drop, 80 +/- 40 ms delay, robot death, sensor bias) it stays collision-free and converges, but the error wobbles around 0.1 to 0.3 m. Statistics (Section 6) come from a headless kinematic simulator that mirrors the ROS node pipeline. All Gazebo results before 2026-11-07 ran without wheel odometry (a bridge type mismatch) and are superseded.
 
 ```
                 Robot 2 (0.62, 1.90)
@@ -253,6 +253,135 @@ Generated from `campaign_results.json` into `results/M8/plots/`:
 4. `difficulty_sweep_latency.png`: applied latency sweep (0–200 ms).
 
 > The M8 numbers published before 2026-11-07 (325 runs, "47.2% energy reduction", "safe under 200 ms") came from a simulator that did not apply delay and from CBF runs that deadlocked. They are superseded; see the erratum in `reports/TECHNICAL_REPORT.md`.
+
+---
+
+### 6.1 Gazebo Validation (Phase C)
+
+All runs: 5 robots, crossing start positions, CBF on, clean channel, 40 s of simulated
+time, ROS 2 Jazzy + Gazebo Harmonic in WSL2 (Ubuntu 24.04, 4 cores). Raw CSVs and launch
+logs are in `results/phaseC/`.
+
+| Run | Change | Final shape error | Closest robots | What happened |
+| :--- | :--- | :---: | :---: | :--- |
+| `cbf_clean` | nodes on wall clock (old default) | 2.49 m | 1.13 m | Gazebo ran at ~5% of real time; controllers saw huge lag and robots crawled |
+| `cbf_simtime` | `use_sim_time:=true` | 0.59 m | 0.83 m | formation formed (0.32 m at ~25 s), then drifted and pinned robots on the east wall |
+| `cbf_walls` | walls sensed, true obstacle sizes | 2.43 m | 0.72 m | no wall contact, but robots 2 and 5 trapped between rubble pieces |
+| `cbf_boxes` | exact box shapes, 0.10 m obstacle margin | 1.37 m | 0.83 m | robot 2 freed; robot 5 still trapped at a 0.66 m gap the CBF cannot pass |
+| `cbf_nav` | navigation layer | 0.46 m | 0.96 m | every robot moves and reaches the formation area; error hovers 0.30 to 0.46 m against the east wall |
+| `cbf_nav_anchor` | + anchor at the spawn centroid | 1.61 m | 0.75 m | not converged; formation centre held within 0.28 m of target, but robots 2 and 5 froze near their old trap spots from ~5 s; mean localization error 0.18 m (vs 0.10 m in `cbf_nav`) |
+| `diag_anchor` | same as `cbf_nav_anchor`, with rosbag | 0.66 m | 0.96 m | converged at 18.8 s; max error over last 10 s 0.66 m; mean localization error 0.075 m. The bag showed `/robot_i/odom` had **0 messages** and heading errors of 0.1 to 0.4 rad |
+| `diag_anchor_odom` | wheel odometry fixed (bridge type + EKF fallback) | 0.10 m | 0.91 m | converged at 13.0 s; max error over last 10 s 0.18 m; mean localization error 0.015 m |
+| `cbf_final_default` | anchor + navigation (no bag) | 0.06 m | 0.88 m | converged at 13.7 s; max error over last 10 s 0.49 m; mean localization error 0.014 m. The formation first assembled ~1.6 m from the anchor point; from ~22 to 35 s the anchor dragged it past the two slabs, which held robots 1 and 2 back and stretched the shape to 0.49 m, before it settled at its target |
+| `diag_calm` | + calm twist mapper (force-scaled turning, stop band) | 0.52 m | 0.92 m | converged at 12.0 s; settled robots stopped turning (0.00 rad/s), but from ~30 s robots 1 and 2 were frozen: their force pointed behind them, the controller asked to turn in place, and the look-ahead CBF cancelled the rotation |
+| `diag_calm2` | + pure rotation passes the CBF | 0.08 m | 0.87 m | converged at 22.8 s; no freezing; robot 1 was blocked head-on by the CBF for ~15 s while following a navigation route; the anchor stayed saturated (formation ~1 m off its anchor point), so residual forces kept some robots turning |
+| `diag_clearance` | planner clearance derived from the CBF margins | 0.069 m | 1.16 m | converged at 6.5 s (fastest so far); max error over the last 10 s 0.10 m; anchor satisfied (force 0.05 to 0.17 instead of saturated at 0.40); CBF interventions near zero once settled; navigation idle after ~10 s |
+| `tune_A_band` | stop band 0.15/0.30 -> 0.5/0.9 (**current defaults**) | **0.060 m** | 1.04 m | converged at 7.9 s; after 20 s the robots stand completely still (turn rate 1.71 -> 0.00 rad/s, forward speed 0.087 -> 0.000 m/s) and the settled error improves (mean 0.068 -> 0.060 m, max 0.113 -> 0.060 m) |
+
+What changed to get there:
+- **Wheel odometry never reached the EKF** (fixed). The bridge declared the odometry
+  topic as `gz.msgs.OdometryWithCovariance`, but the DiffDrive plugin publishes
+  `gz.msgs.Odometry`, so `/robot_i/odom` carried no messages. The EKF's fallback then
+  accepted a commanded velocity only while its stored velocity was exactly zero, so it
+  dead-reckoned with the robot's *first* command for the whole run, kept on track only by
+  landmark sightings. Heading errors of 0.1 to 0.4 rad rotated every neighbour
+  measurement, so robots chased phantom formation errors and spun in place. **This
+  affected every Gazebo result before 2026-11-07, including M5 to M7.** The localization
+  node now warns if no odometry arrives within 5 s.
+- **Simulated time.** All nodes and the rosbag recorder use the Gazebo `/clock`
+  (`use_sim_time`, launch default `true`). Gazebo in WSL runs at a real-time factor of
+  about 0.05, so on the wall clock the control loop saw ~20x artificial delay.
+- **Static world model** (`world_model.py`): pillars as circles, slabs and rubble as exact
+  oriented boxes, boundary walls as boxes. Every box is sensed as its closest surface point;
+  landmark centres travel separately in `NeighborList.landmarks` for the EKF.
+- **Navigation layer** (`navigation.py`, `use_navigation: true`): each robot plans an A*
+  route on the known map, with obstacles inflated by the clearance the CBF needs (0.5 m),
+  toward the point where its formation forces balance. It overrides formation control
+  only while the straight line to that point is blocked. It uses the map and the robot's
+  EKF position estimate.
+- **Formation anchor** (`anchor_gain: 0.4`, on by default): a virtual-leader pull toward the
+  spawn centroid (0.44, -0.44); the navigation target includes it, so robots are routed
+  around obstacles toward it. It removes the formation drift that pinned robots on the
+  wall. It only works with good localization: every anchored failure in Gazebo happened
+  while odometry was missing.
+
+Still open:
+- **Turning at rest** (fixed). The `calm` twist mapper (`twist_mapper: calm`) scales the
+  turn rate with the force size and stops below `stop_force` until the force exceeds
+  `resume_force`; the CBF passes pure rotations, which cannot reduce any distance. With a
+  0.15/0.30 band, Gazebo robots still turned at 1.71 rad/s once settled, because the ~7 cm
+  settled formation error leaves residual forces of 0.4 to 0.9. The default band 0.5/0.9
+  makes them stand still (0.00 rad/s, 0.000 m/s) and slightly improves accuracy. Trade-off:
+  robots stop at about 6 cm formation error (kinematic sim clean: 0.014-0.021 -> 0.057-0.065
+  m; impaired: 0.12-0.16 -> 0.09-0.12 m, turning 1.84 -> 0.77 rad/s). Reverse driving was
+  tried and rejected: it fought the CBF look-ahead point (0/4 runs converged).
+- **Planner clearance vs CBF** (fixed). The navigation grid used a fixed 0.50 m
+  inflation, below the 0.52 m the look-ahead CBF needs at default settings and far below
+  it under delay, so routes led into gaps the CBF refused to pass. The inflation is now
+  derived from the CBF settings (`nav_inflation: -1`): `safety_dist_obs + cbf_lookahead +
+  max_linear_vel * delay_bound_sec + 0.05` (0.57 m at defaults, 0.67 m with a 120 ms
+  bound). The line-of-sight check tolerates a start or target inside an obstacle band only
+  up to that point's own depth in it. Kinematic sim with 80 +/- 40 ms delay in the arena:
+  0 to 1 of 4 runs converged before, 4 of 4 after.
+- **Anchor transients.** The formation can assemble away from the anchor point and is
+  then dragged into place; on the way, obstacles can hold some robots back and distort
+  the shape for tens of seconds (`cbf_final_default`, 22 to 35 s).
+- **Single samples.** Each configuration was run once or twice in Gazebo (3 to 16 min per
+  run in WSL), so these are examples, not statistics; earlier runs showed large
+  run-to-run variation.
+- **Only the clean channel was tested in Gazebo.** Packet loss, delay, noise and robot
+  faults have so far only been evaluated in the kinematic campaign (Section 6).
+
+### 6.2 Gazebo Fault Tests
+
+Default configuration with `enable_faults:=true` (the launch file's network impairment), one
+run each, 40 s of simulated time, rosbags recorded. The CBF delay bound was left at its
+default 50 ms although the applied delay reaches 120 ms, as it would be deployed.
+
+| Run | Faults | Converged at | Settled shape error, mean / max | Final | Closest robots | Localization error | Settled turn / speed (rad/s, m/s) |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `tune_A_band` | none (clean channel, reference) | 8.0 s | 0.060 / 0.060 m | 0.060 m | 1.04 m | 0.004 m | 0.00 / 0.000 |
+| `fault_net_only` | 15% drop, 80 +/- 40 ms delay | 7.8 s | 0.180 / 0.288 m | 0.181 m | 1.15 m | 0.034 m | 2.05 / 0.236 |
+| `fault_robot_death` | network + robot 4 motors off 5-10 s | 9.8 s | 0.141 / 0.271 m | 0.271 m | 1.05 m | 0.021 m | 1.73 / 0.177 |
+| `fault_composite` | network + robot 4 death + robot 2 sensor bias (0.25 m, 0.08 rad, 2-40 s) + robot 3 sensor cut-outs (6-25 s) | 20.6 s | 0.230 / 0.312 m | 0.289 m | 0.90 m | 0.101 m | 1.48 / 0.130 |
+| `fault_net_only_comp` | 15% drop, 80 +/- 40 ms delay; + delay compensation | 10.7 s | 0.187 / 0.306 m | 0.285 m | 1.13 m | 0.027 m | 1.86 / 0.165 |
+| `fault_net_sensorfix` | 15% drop, 80 +/- 40 ms delay; + compensation + sensor timing fix (current defaults) | 7.0 s | 0.161 / 0.290 m | 0.282 m | 1.12 m | 0.018 m | 1.55 / 0.124 |
+
+Findings:
+- **Safety held in every fault run**: no collisions (closest approach 0.90 m), no node
+  crashes, and robot 4's motor kill and restore fired as configured.
+- **Delay costs accuracy, not stability.** With 80 +/- 40 ms delay the error does not settle
+  flat (0.06 m on a clean channel) but wobbles between about 0.08 and 0.25 m without
+  growing, and the robots keep making corrections: they react to neighbour positions that
+  are 80 to 120 ms old. This matches the kinematic campaign (accuracy degrades with delay,
+  Section 6).
+- **A temporary robot death leaves no lasting damage**: after robot 4 recovers, the error
+  stays in the same band as with delay alone.
+- **Persistent sensor bias is the hardest case.** In the composite run the formation recovers
+  from robot 4's death (0.95 m at 10 s to 0.14 m at 22 s), then drifts back to about 0.3 m
+  while robot 2's sensors stay biased. The bias also corrupts robot 2's landmark sightings,
+  so localization error rises to 0.10 m (0.02 to 0.03 m in the other fault runs). Nothing
+  in the stack detects or rejects a biased sensor.
+- **Delay compensation** (`delay_compensation: true`): each delayed neighbour measurement
+  is corrected by the robot's own motion since it was taken (exact, from the EKF pose
+  history). In the kinematic sim this cut the final error under the launch fault settings
+  from 0.09-0.12 to 0.07-0.10 m and rescued 200 ms runs (1/4 -> 3/4 converge); also
+  extrapolating the neighbour's motion made things worse (the velocity estimate is too
+  noisy), so `peer_velocity_gain` stays 0. In Gazebo the effect was within run-to-run
+  noise: settled robots move only ~2 cm in 100 ms, too little to explain the wobble.
+- **The rosbag showed the real Gazebo error source: sensor timing.** The simulated sensor
+  combined poses of different ages (poses at 50 Hz, sensor at 20 Hz) and stamped the result
+  with its publish time. Once robots moved and turned (~2 rad/s), the measurement was off
+  by 9 cm on average even though no sensor noise is configured (0 cm when robots stand
+  still). The sensor now stamps with the time of the own pose it uses and evaluates
+  neighbours at that time, as a real sensor would: measurement error 0.091 -> 0.027 m,
+  staleness error 0.104 -> 0.052 m, settled formation error 0.180 -> 0.161 m.
+- **Remaining wobble under delay** (~0.16 m mean, up to 0.29 m) now comes mostly from the
+  control loop acting on 80-200 ms old data, plus a tail of large errors when jittered
+  packets arrive out of order (~730 per run). Lowering the formation gain under delay,
+  or dropping out-of-order packets, are the next things to try.
+- These are single runs; the delay wobble makes the final value of any one run noisy (it
+  crossed 0.25 m at the last sample in two of three runs).
 
 ---
 

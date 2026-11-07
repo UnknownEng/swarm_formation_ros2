@@ -43,27 +43,45 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from swarm_formation.cbf_qp import compute_cbf_safe_twist
-from swarm_formation.consensus import compute_target_offsets
+from swarm_formation.consensus import compute_anchor_force, compute_target_offsets
 from swarm_formation.controllers import create_controller
 from swarm_formation.formation_metrics import compute_procrustes_error
-from swarm_formation.kinematics import compute_unicycle_twist, wrap_angle
+from swarm_formation.kinematics import compute_unicycle_twist, UnicycleMapper, wrap_angle
 from swarm_formation.localization import RobotEKF
+from swarm_formation.navigation import (
+    anchor_slot_position,
+    formation_target,
+    navigation_force,
+    NavigationGuide,
+    OccupancyGrid,
+    required_clearance,
+)
 from swarm_formation.potential_field import (
     compute_peer_safety_scale,
     compute_relative_peer_apf,
 )
-from swarm_formation.relative_sensing import compute_heartbeat_mask, update_relative_store
+from swarm_formation.relative_sensing import (
+    compensate_delay,
+    compute_heartbeat_mask,
+    update_relative_store,
+)
+from swarm_formation.world_model import (
+    DEFAULT_FORMATION_CENTER,
+    landmark_positions,
+    static_obstacles_in_range,
+)
 
 # Obstacle centres of collapsed_building.sdf, used as known localization beacons.
-LANDMARKS: List[Tuple[float, float]] = [
-    (-1.66, 1.40),
-    (1.92, 1.87),
-    (0.25, 1.96),
-    (0.95, -0.33),
-    (-1.80, -1.09),
-    (-0.12, -1.89),
-    (1.87, -1.24),
-]
+LANDMARKS: List[Tuple[float, float]] = list(landmark_positions().values())
+
+
+_GRID_CACHE: Dict[float, OccupancyGrid] = {}
+
+
+def _grid_for(inflation: float) -> OccupancyGrid:
+    if inflation not in _GRID_CACHE:
+        _GRID_CACHE[inflation] = OccupancyGrid(inflation=inflation)
+    return _GRID_CACHE[inflation]
 
 
 @dataclass
@@ -98,11 +116,29 @@ class CampaignRunConfig:
     heartbeat_timeout: float = 1.2
     use_apf: bool = False
 
+    # Delay compensation (relative_sensing.compensate_delay): subtract own motion since
+    # each measurement; optionally extrapolate the neighbour's motion too
+    delay_compensation: bool = False
+    peer_velocity_gain: float = 0.0
+
+    # Force -> (v, w): 'calm' = UnicycleMapper (reverse, force-scaled turning, stop band),
+    # 'legacy' = compute_unicycle_twist (turn toward any force above 0.03)
+    twist_mapper: str = 'legacy'
+    allow_reverse: bool = False
+    turn_full_force: float = 1.0
+    stop_force: float = 0.5
+    resume_force: float = 0.9
+
+    # Formation anchor (virtual leader around a fixed centre, uses the EKF estimate)
+    anchor_gain: float = 0.0
+    formation_center: Tuple[float, float] = DEFAULT_FORMATION_CENTER
+
     # Safety filter
     use_cbf: bool = False
     cbf_safety_dist: float = 0.55
     cbf_gamma: float = 1.5
     cbf_lookahead: float = 0.15
+    cbf_safety_dist_obs: float = 0.30
     # None = margin matched to the applied worst-case latency (delay_sec + jitter_sec)
     cbf_delay_bound_sec: Optional[float] = None
 
@@ -118,6 +154,18 @@ class CampaignRunConfig:
     odom_speed_noise_frac: float = 0.02
     odom_yaw_rate_noise_std: float = 0.02
     use_landmarks: bool = True
+
+    # Static obstacles and walls of collapsed_building.sdf (sensed and fed to the CBF;
+    # contact is not simulated, clearance violations are only measured)
+    use_world_obstacles: bool = False
+
+    # Navigation layer (navigation.py), same defaults as config/swarm_params.yaml
+    use_navigation: bool = False
+    nav_inflation: Optional[float] = None  # None = derived from the CBF settings
+    nav_carrot_dist: float = 0.6
+    nav_replan_period: float = 0.5
+    nav_min_force: float = 0.4
+    robot_radius: float = 0.20
 
     # Agent fault: robot stops (motor kill) from dropout_start_sec onward
     dropout_robot_id: int = 0
@@ -202,8 +250,32 @@ def run_single_simulation(
     odom_yaw = [0.0] * n  # integrated wheel-odometry heading relative to start
 
     controller = create_controller(config.controller_type)
-    offsets_by_robot = {
-        i: compute_target_offsets(i, n, config.formation_radius) for i in range(1, n + 1)
+    mappers = [
+        UnicycleMapper(
+            k_yaw=config.k_yaw, max_lin_vel=config.v_max, max_ang_vel=config.omega_max,
+            allow_reverse=config.allow_reverse, turn_full_force=config.turn_full_force,
+            stop_force=config.stop_force, resume_force=config.resume_force,
+        )
+        for _ in range(n)
+    ]
+    nav_guides: List[Optional[NavigationGuide]] = [None] * n
+    if config.use_navigation:
+        inflation = config.nav_inflation
+        if inflation is None:
+            inflation = required_clearance(
+                safety_dist_obs=config.cbf_safety_dist_obs,
+                lookahead=config.cbf_lookahead,
+                max_linear_vel=config.v_max,
+                delay_bound_sec=cbf_delay_bound,
+            )
+        grid = _grid_for(round(inflation, 4))
+        nav_guides = [
+            NavigationGuide(grid, carrot_dist=config.nav_carrot_dist,
+                            replan_period=config.nav_replan_period)
+            for _ in range(n)
+        ]
+    target_offsets = {
+        rid: compute_target_offsets(rid, n, config.formation_radius) for rid in range(1, n + 1)
     }
 
     # Channel state. Packet: (deliver_time, src_j, range, bearing, measurement_time)
@@ -211,6 +283,7 @@ def run_single_simulation(
     delivered: List[Dict[int, Tuple[float, float, float, float]]] = [{} for _ in range(n)]
     # Estimated heading per control step (robot_node / safety_filter_node YawHistory)
     est_yaw_hist: List[List[float]] = [[] for _ in range(n)]
+    est_pos_hist: List[List[Tuple[float, float]]] = [[] for _ in range(n)]
     packets_sent = 0
     packets_dropped = 0
     latency_sum = 0.0
@@ -229,9 +302,13 @@ def run_single_simulation(
     est_errors = np.zeros(num_steps)
     yaw_errors = np.zeros(num_steps)
     running_min_dist = float('inf')
+    min_obstacle_clearance = float('inf')  # surface-to-robot-edge distance
     total_collision_events = 0
     effort_lin = 0.0
     effort_ang = 0.0
+    late_abs_w = 0.0  # mean |w|, |v| over the last quarter of the run (settled phase)
+    late_abs_v = 0.0
+    late_samples = 0
     path_length = 0.0
     total_interventions = 0.0
     consecutive_settled_time = 0.0
@@ -249,6 +326,13 @@ def run_single_simulation(
             for j in range(i + 1, n):
                 d = math.hypot(cur_x[i] - cur_x[j], cur_y[i] - cur_y[j])
                 running_min_dist = min(running_min_dist, d)
+        if config.use_world_obstacles:
+            for i in range(n):
+                for _, ox, oy, orad in static_obstacles_in_range(cur_x[i], cur_y[i], 1.5):
+                    min_obstacle_clearance = min(
+                        min_obstacle_clearance,
+                        math.hypot(ox - cur_x[i], oy - cur_y[i]) - orad - config.robot_radius,
+                    )
                 if d < config.collision_threshold:
                     total_collision_events += 1
 
@@ -349,6 +433,8 @@ def run_single_simulation(
 
             _, _, est_yaw = ekfs[i].get_pose()
             est_yaw_hist[i].append(est_yaw)
+            ex_h, ey_h, _ = ekfs[i].get_pose()
+            est_pos_hist[i].append((ex_h, ey_h))
             hist = est_yaw_hist[i]
 
             def yaw_at(t_meas: float, hist: List[float] = hist) -> float:
@@ -396,6 +482,22 @@ def run_single_simulation(
                 peer_states = {pid: e[:4] for pid, e in rel_store[i].items()}
 
             rel_disp = {pid: (s[0], s[1]) for pid, s in peer_states.items()}
+            if config.delay_compensation:
+                phist = est_pos_hist[i]
+
+                def own_pos_at(tq: float, phist=phist) -> Tuple[float, float]:
+                    return phist[min(len(phist) - 1, max(0, int(round(tq / dt))))]
+
+                comp = compensate_delay(
+                    rel_store[i], t, own_pos_at, config.peer_velocity_gain
+                )
+                # Apply the same correction on top of any EMA filtering
+                for pid, (cx, cy) in comp.items():
+                    if pid in rel_disp:
+                        raw = rel_store[i][pid]
+                        rel_disp[pid] = (
+                            rel_disp[pid][0] + cx - raw[0], rel_disp[pid][1] + cy - raw[1]
+                        )
             fx, fy = controller.compute_control_force(
                 robot_id, n, config.formation_radius, rel_disp, config.k_p,
                 huber_delta=config.huber_delta if config.use_huber else 100.0,
@@ -411,13 +513,58 @@ def run_single_simulation(
                 fx = fx * scale + fx_apf
                 fy = fy * scale + fy_apf
 
+            guide = nav_guides[i]
+            if guide is not None:
+                ex_n, ey_n, _ = ekfs[i].get_pose()
+                rel_now = {pid: rel_disp.get(pid, (e[0], e[1]))
+                           for pid, e in rel_store[i].items()}
+                target = formation_target(
+                    (ex_n, ey_n), rel_now, target_offsets[robot_id],
+                    consensus_gain=config.k_p,
+                    anchor_slot=anchor_slot_position(
+                        robot_id, n, config.formation_radius, config.formation_center
+                    ),
+                    anchor_gain=config.anchor_gain,
+                )
+                steer_point = guide.steer(t, (ex_n, ey_n), target)
+                if steer_point is not None:
+                    fx, fy = navigation_force(
+                        (fx, fy), (ex_n, ey_n), steer_point, config.nav_min_force
+                    )
+
+            if config.anchor_gain > 0.0:
+                ex_i, ey_i, _ = ekfs[i].get_pose()
+                fax, fay = compute_anchor_force(
+                    robot_id, n, config.formation_radius, config.formation_center,
+                    (ex_i, ey_i), config.anchor_gain,
+                )
+                fx += fax
+                fy += fay
+
             fx -= config.k_d * cmd_vel_xy[i][0]
             fy -= config.k_d * cmd_vel_xy[i][1]
 
-            raw_v, raw_w = compute_unicycle_twist(
-                fx, fy, est_yaw, config.k_yaw, config.v_max, config.omega_max
-            )
+            if config.twist_mapper == 'calm':
+                raw_v, raw_w = mappers[i].to_twist(fx, fy, est_yaw)
+            else:
+                raw_v, raw_w = compute_unicycle_twist(
+                    fx, fy, est_yaw, config.k_yaw, config.v_max, config.omega_max
+                )
             cmd_vel_xy[i] = [raw_v * math.cos(est_yaw), raw_v * math.sin(est_yaw)]
+
+            sensed_obstacles: List[Tuple[float, float, float]] = []
+            if config.use_world_obstacles:
+                # Onboard sensing (not networked), rotated with the current estimated yaw
+                for _, ox, oy, orad in static_obstacles_in_range(
+                    cur_x[i], cur_y[i], config.sensing_range
+                ):
+                    dxw, dyw = ox - cur_x[i], oy - cur_y[i]
+                    rng_o = math.hypot(dxw, dyw)
+                    brg_o = wrap_angle(math.atan2(dyw, dxw) - cur_yaw[i])
+                    sensed_obstacles.append((
+                        rng_o * math.cos(brg_o + est_yaw), rng_o * math.sin(brg_o + est_yaw),
+                        orad,
+                    ))
 
             if config.use_cbf:
                 safe_v, safe_w, interv = compute_cbf_safe_twist(
@@ -425,8 +572,9 @@ def run_single_simulation(
                     w_raw=raw_w,
                     robot_yaw=est_yaw,
                     relative_peers=current_list,
-                    relative_obstacles=[],
+                    relative_obstacles=sensed_obstacles,
                     safety_dist_peer=config.cbf_safety_dist,
+                    safety_dist_obs=config.cbf_safety_dist_obs,
                     gamma_peer=config.cbf_gamma,
                     delay_bound_sec=cbf_delay_bound,
                     max_linear_vel=config.v_max,
@@ -443,6 +591,10 @@ def run_single_simulation(
             v, w = cmd_v[i], cmd_w[i]
             effort_lin += v * v * dt
             effort_ang += w * w * dt
+            if t >= 0.75 * config.duration_sec:
+                late_abs_w += abs(w)
+                late_abs_v += abs(v)
+                late_samples += 1
             path_length += abs(v) * dt
             cur_x[i] += v * math.cos(cur_yaw[i]) * dt
             cur_y[i] += v * math.sin(cur_yaw[i]) * dt
@@ -457,8 +609,11 @@ def run_single_simulation(
     return {
         'seed': seed,
         'final_shape_error': float(shape_errors[-1]),
+        'final_centroid': (float(sum(cur_x) / n), float(sum(cur_y) / n)),
         'min_shape_error': float(np.min(shape_errors)),
         'global_min_distance': float(running_min_dist),
+        'min_obstacle_clearance': float(min_obstacle_clearance),
+        'obstacle_collision_free': bool(min_obstacle_clearance >= 0.0),
         'total_collisions': int(total_collision_events),
         'empirically_collision_free': bool(running_min_dist >= config.collision_threshold),
         'is_converged': bool(is_converged),
@@ -467,6 +622,8 @@ def run_single_simulation(
         'mean_yaw_error': float(np.mean(yaw_errors)),
         'control_effort_lin': float(effort_lin),
         'control_effort_ang': float(effort_ang),
+        'late_mean_abs_w': float(late_abs_w / late_samples) if late_samples else 0.0,
+        'late_mean_abs_v': float(late_abs_v / late_samples) if late_samples else 0.0,
         'path_length': float(path_length),
         'total_safety_interventions': float(total_interventions),
         'packet_drop_fraction': float(packets_dropped / packets_sent) if packets_sent else 0.0,

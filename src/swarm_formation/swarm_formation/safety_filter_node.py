@@ -42,7 +42,7 @@ class SafetyFilterNode(Node):
         self.declare_parameter('robot_id', 1)
         self.declare_parameter('total_robots', 5)
         self.declare_parameter('safety_dist_peer', 0.55)
-        self.declare_parameter('safety_dist_obs', 0.35)
+        self.declare_parameter('safety_dist_obs', 0.30)
         self.declare_parameter('cbf_gamma_peer', 1.5)
         self.declare_parameter('cbf_gamma_obs', 2.0)
         self.declare_parameter('delay_bound_sec', 0.05)
@@ -50,6 +50,7 @@ class SafetyFilterNode(Node):
         self.declare_parameter('max_angular_vel', 3.0)
         self.declare_parameter('yaw_gain_kyaw', 4.0)
         self.declare_parameter('filter_rate', 50.0)
+        self.declare_parameter('cbf_lookahead', 0.15)
 
         self.robot_id = int(self.get_parameter('robot_id').value)
         self.total_robots = int(self.get_parameter('total_robots').value)
@@ -62,6 +63,7 @@ class SafetyFilterNode(Node):
         self.max_ang_vel = float(self.get_parameter('max_angular_vel').value)
         self.k_yaw = float(self.get_parameter('yaw_gain_kyaw').value)
         self.filter_rate = float(self.get_parameter('filter_rate').value)
+        self.cbf_lookahead = float(self.get_parameter('cbf_lookahead').value)
 
         self.dt = 1.0 / self.filter_rate
 
@@ -174,6 +176,7 @@ class SafetyFilterNode(Node):
             max_linear_vel=self.max_lin_vel,
             max_angular_vel=self.max_ang_vel,
             yaw_gain_kyaw=self.k_yaw,
+            lookahead_dist=self.cbf_lookahead,
         )
 
         cmd = Twist()

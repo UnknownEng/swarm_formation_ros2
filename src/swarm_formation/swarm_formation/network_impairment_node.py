@@ -84,6 +84,9 @@ class NetworkImpairmentNode(Node):
         self.latest_obstacles: Dict[int, List[ObstacleMeasurement]] = {
             i: [] for i in range(1, self.total_robots + 1)
         }
+        self.latest_landmarks: Dict[int, List[ObstacleMeasurement]] = {
+            i: [] for i in range(1, self.total_robots + 1)
+        }
 
         # Subscriptions and Publishers for each robot
         self.raw_subs = []
@@ -185,6 +188,7 @@ class NetworkImpairmentNode(Node):
 
         # Obstacles are direct physical line-of-sight sensing, not RF packets
         self.latest_obstacles[dst_id] = list(msg.obstacles)
+        self.latest_landmarks[dst_id] = list(msg.landmarks)
 
         for n in msg.neighbors:
             src_id = int(n.neighbor_id)
@@ -232,6 +236,7 @@ class NetworkImpairmentNode(Node):
             msg.header.frame_id = f'robot_{i}/base_link'
             msg.robot_id = i
             msg.obstacles = self.latest_obstacles[i]
+            msg.landmarks = self.latest_landmarks[i]
 
             # Collect active delivered neighbor states (purge stale packets older than 1.5s)
             active_neighbors: List[NeighborMeasurement] = []

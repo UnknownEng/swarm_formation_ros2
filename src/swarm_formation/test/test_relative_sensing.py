@@ -197,3 +197,32 @@ def test_heartbeat_mask_uses_measurement_age() -> None:
     store = {2: (1.0, 0.0, 0.0, 0.0, 10.0), 3: (1.0, 1.0, 0.0, 0.0, 8.6)}
     mask = compute_heartbeat_mask(store, [2, 3, 4], now=10.0, timeout=1.2)
     assert mask == {2: True, 3: False, 4: False}
+
+
+def test_delay_compensation_subtracts_own_motion() -> None:
+    """Own motion since the measurement is removed exactly; no history leaves it raw."""
+    from swarm_formation.relative_sensing import compensate_delay, PoseHistory
+
+    hist = PoseHistory()
+    hist.add(0.0, 0.0, 0.0)
+    hist.add(1.0, 1.0, 0.5)
+    store = {2: (2.0, 0.0, 0.0, 0.0, 0.5)}      # measured at t = 0.5, now = 1.0
+    comp = compensate_delay(store, 1.0, hist.lookup)
+    assert math.isclose(comp[2][0], 1.5) and math.isclose(comp[2][1], -0.25)
+    assert compensate_delay(store, 1.0, PoseHistory().lookup) == {2: (2.0, 0.0)}
+
+
+def test_delay_compensation_peer_extrapolation_and_age_clip() -> None:
+    """Neighbour motion is extrapolated only when asked; very old entries are clipped."""
+    from swarm_formation.relative_sensing import compensate_delay, PoseHistory
+
+    hist = PoseHistory()
+    hist.add(0.0, 0.0, 0.0)
+    hist.add(10.0, 0.0, 0.0)                     # this robot stands still
+    store = {2: (2.0, 0.0, 1.0, 0.0, 9.8)}       # peer drifting away at 1 m/s, age 0.2 s
+    assert compensate_delay(store, 10.0, hist.lookup)[2] == (2.0, 0.0)
+    moved = compensate_delay(store, 10.0, hist.lookup, peer_velocity_gain=1.0)[2]
+    assert math.isclose(moved[0], 2.2, abs_tol=1e-9)
+    old = {2: (2.0, 0.0, 1.0, 0.0, 0.0)}         # age 10 s, clipped to 0.5 s
+    clipped = compensate_delay(old, 10.0, hist.lookup, peer_velocity_gain=1.0)[2]
+    assert math.isclose(clipped[0], 2.5, abs_tol=1e-9)
