@@ -19,7 +19,7 @@ This repository delivers a ROS 2 / Gazebo robotics software framework for **dece
 
 A swarm of **5 nonholonomic differential-drive mobile robots** autonomously self-organizes into a regular pentagon ($R = 2.0\,\text{m}$) without any central coordinator, global GPS/mocap positioning, or designated leader.
 
-> **Validation status (2026-11-07):** in Gazebo (Section 6.1), with the default configuration the formation converges in 7.9 s to a 0.060 m final shape error (threshold 0.25 m) without collisions on a clean channel, and the robots then stand still. Under the launch file's fault settings (Section 6.2: 15% drop, 80 +/- 40 ms delay, robot death, sensor bias) it stays collision-free and converges, but the error wobbles around 0.1 to 0.3 m. Statistics (Section 6) come from a headless kinematic simulator that mirrors the ROS node pipeline. All Gazebo results before 2026-11-07 ran without wheel odometry (a bridge type mismatch) and are superseded.
+> **Validation status (2026-11-07):** in Gazebo, ten repeated runs of the default configuration from perturbed start poses (Section 6.1) all reached the formation without collisions: on a clean channel in 7.0 s to a 0.048 m final shape error (threshold 0.25 m), after which the robots stand still; under the launch file's fault settings (15% drop, 80 +/- 40 ms delay, robot 4 motors off for 5 s) in 11.5 s to 0.15 m, with the error wobbling between about 0.1 and 0.3 m (worst 0.5 m). All three controller families converge in the deployed arena stack (Section 4.4); localization weights neighbours by their shared covariance (Section 6.3). Statistics (Sections 4.4, 6, 6.3) come from a headless kinematic simulator that mirrors the ROS node pipeline. All Gazebo results before 2026-11-07 ran without wheel odometry (a bridge type mismatch) and are superseded.
 
 ```
                 Robot 2 (0.62, 1.90)
@@ -43,14 +43,15 @@ so the whole pentagon may be translated.
 1. **Decentralized Relative Polar Sensing**: No robot reads global $(x, y)$. Sensing is restricted to onboard relative polar range and bearing within $R_{\text{sense}} = 6.0\,\text{m}$.
 2. **Three Interchangeable Controller Families**:
    - **Displacement-based consensus** with Huber robust penalty (Ren & Beard 2008).
-   - **Distance-based rigidity control** with stress matrix and orientation alignment (Oh & Ahn 2014).
-   - **Bearing-based consensus** with orthogonal projection nullspace operators (Zhao & Zelazo 2016).
-3. **Cooperative EKF Localization Law**: An onboard Extended Kalman Filter fuses wheel odometry and relative neighbor measurements to estimate local ego-pose. Ground truth is strictly isolated for offline metric evaluation.
+   - **Distance-based control with signed-area constraints** (Krick et al. 2009; Anderson et al. 2017): no common heading needed.
+   - **Bearing-only control** with orthogonal projection (Zhao & Zelazo 2016) plus a weak range term for the scale.
+   All three converge from the Gazebo spawn and in the deployed arena stack (Section 4.4).
+3. **Cooperative EKF Localization Law**: An onboard Extended Kalman Filter fuses wheel odometry, known landmarks and relative neighbour measurements; each neighbour's estimate is weighted by its shared covariance (`/robot_i/estimated_pose_cov`), which keeps the filter consistent (NEES ~2 instead of >10). Without the landmark map (`use_landmarks:=false`) the absolute pose drifts (0.8 m), while formation control, which uses relative measurements, still converges (Section 6.3). Ground truth is strictly isolated for offline metric evaluation.
 4. **Active Safety Layer (CBF-QP)**: A standalone look-ahead Control Barrier Function QP filter (exact 2D solver, exact unicycle mapping, right-hand deadlock breaking). In the kinematic campaign it kept every run collision-free ($d_{\min} \ge 0.50\,\text{m}$) **while still reaching the formation in 100% of clean-channel runs** (see Section 6).
-5. **Delay-Compensated Safety**: Barrier expansion $D_s^{\text{eff}} = D_s + \ell + 2 v_{\max} \tau_{\max}$. With latency actually applied to every peer measurement, all runs stayed collision-free up to 200 ms, but formation accuracy only holds to about 100 ms (at 200 ms, 36% of runs reach the formation).
+5. **Delay-Compensated Safety**: Barrier expansion $D_s^{\text{eff}} = D_s + \ell + 2 v_{\max} \tau_{\max}$ plus delay compensation (each delayed measurement is corrected by the robot's own motion). With latency actually applied to every peer measurement, all runs stayed collision-free up to 200 ms; formation accuracy is unaffected up to 100 ms (0.044 m) and degrades at 200 ms (0.135 m).
 6. **Decoupled Network Impairments & Fault Injection**: Standalone nodes simulate Bernoulli packet loss, stochastic delay queues, sensor bias, and agent dropouts, with runtime ROS 2 service toggles.
 7. **Offline Rosbag-Driven Analytics**: Rosbag recording (`ros2 bag`), offline Procrustes metric extraction (`process_bag`), and publication plot generation (`plot_bag`).
-8. **Statistical Rigor & One-Command Replication**: 400-run kinematic campaign (25 seeds $\times$ 16 conditions, leave-one-out ablation, applied packet-drop and latency sweeps) with Student's $t$ 95% Confidence Intervals, reproducible via `./reproduce_all.sh`. The campaign uses a headless unicycle simulator that mirrors the ROS node pipeline; it is not a physics simulation.
+8. **Statistical Rigor & One-Command Replication**: 425-run kinematic campaign on the deployed stack in the arena (25 seeds $\times$ 17 conditions, leave-one-out ablation, applied packet-drop and latency sweeps, robot dropout) with Student's $t$ 95% Confidence Intervals, reproducible via `./reproduce_all.sh`. The campaign uses a headless unicycle simulator that mirrors the ROS node pipeline; it is not a physics simulation.
 
 ---
 
@@ -160,30 +161,67 @@ flowchart TD
 | `headless` | `true` | `bool` | Runs Gazebo Harmonic in headless server mode. |
 | `sim_duration` | `0.0` | `float` | Auto-shutdown duration in seconds (`0.0` = manual Ctrl-C). |
 | `world` | `collapsed_building.sdf` | `string` | World environment path. |
+| `use_landmarks` | `true` | `bool` | EKF uses the known landmark map (`false` = odometry + peers only). |
+| `use_peer_covariance` | `true` | `bool` | EKF weights peer estimates by their shared covariance. |
 
 ---
 
 ## 4. Theory of the Three Controller Families
 
-All three controllers inherit from `FormationController` and require **zero global Cartesian positions**.
+All three implement `SwarmControllerBase.compute_control_force` (`controllers.py`), take only
+relative measurements $p_{ij} = p_j - p_i$ of the neighbours, and are selected with the
+`controller_type` launch argument. Robot $i$'s target slot is vertex $i$ of the pentagon, so
+$p_{ij}^* = c_j - c_i$, $d_{ij}^* = \|p_{ij}^*\|$ and $g_{ij}^* = p_{ij}^*/d_{ij}^*$; $\mathrm{sat}$
+clips an error to $\pm\delta$ (Huber).
 
 ### 4.1 Displacement-Based Consensus (Ren & Beard 2008)
-Target formation is defined by relative inter-agent offsets $\Delta p_{ij}^* = d_i^* - d_j^*$ in a shared coordinate frame:
-$$\dot{p}_i = -k_p \sum_{j \in \mathcal{N}_i} a_{ij} \psi_{\delta}\left( (p_i - p_j) - \Delta p_{ij}^* \right)$$
-where $\psi_\delta(e)$ is the Huber loss gradient bounding transient velocity spikes caused by packet burst recovery:
-$$\psi_\delta(e) = \begin{cases} e, & \|e\| \le \delta \\ \delta \frac{e}{\|e\|}, & \|e\| > \delta \end{cases}$$
+$$u_i = k \sum_j \mathrm{sat}_\delta\big(p_{ij} - p_{ij}^*\big)$$
+Linear, globally convergent; needs a common heading (the offsets are expressed in a shared frame).
 
-### 4.2 Distance-Based Formation Rigidity (Oh & Ahn 2014)
-Requires **no shared orientation frame**. The target geometry is defined strictly by desired inter-agent Euclidean distances $d_{ij}^*$:
-$$\dot{p}_i = -k_{\text{dist}} \sum_{j \in \mathcal{N}_i} \left( \|p_i - p_j\|^2 - (d_{ij}^*)^2 \right) (p_i - p_j) + u_i^{\text{align}}$$
-A stress matrix formulation guarantees infinitesimal rigidity, while an alignment term $u_i^{\text{align}}$ prevents manifold foldovers and reflection ambiguity.
+### 4.2 Distance-Based Control with Signed-Area Constraints (Krick et al. 2009; Anderson et al. 2017)
+$$u_i = k \Big[\sum_j \mathrm{sat}\big(\|p_{ij}\| - d_{ij}^*\big)\frac{p_{ij}}{\|p_{ij}\|} \;-\; a\!\!\sum_{j<k}\mathrm{sat}\big(A_{ijk} - A_{ijk}^*\big)\,\nabla_{p_i}A_{ijk}\Big],
+\qquad A_{ijk} = \tfrac12\, p_{ij}\times p_{ik}$$
+Both terms are invariant to a rotation of the robot's measurement frame (tested), so **no
+common heading is needed**. The distance term alone (Krick et al.) is only locally
+convergent and cannot tell the pentagon from its mirror image: from the Gazebo spawn, whose
+robot order is scrambled relative to the pentagon, it stalls at 2.68 m, and it reached the
+exact pentagon from only 20 of 100 random starts (39 up to reflection). The signed areas ($a = 0.5$) fix the orientation and
+remove those equilibria: 0.000 m from the Gazebo spawn and from 100/100 random starts
+(`test_m4_acceptance.py`). Set `area_gain=0` for the pure law.
 
-### 4.3 Bearing-Based Formation Control (Zhao & Zelazo 2016)
-Specified by inter-agent unit bearing vectors $g_{ij}^* = \frac{d_j^* - d_i^*}{\|d_j^* - d_i^*\|} \in \mathbb{S}^1$. The orthogonal projection operator onto the nullspace of $g_{ij}^*$ is:
-$$P_{g_{ij}^*} = I_2 - g_{ij}^* (g_{ij}^*)^T$$
-The decentralized control law minimizes bearing error:
-$$\dot{p}_i = -k_{\text{bear}} \sum_{j \in \mathcal{N}_i} P_{g_{ij}^*} (p_j - p_i)$$
-Because $P_{g_{ij}^*} g_{ij}^* = 0$, the controller achieves scale-invariant geometric rigidity.
+### 4.3 Bearing-Only Control with a Scale Term (Zhao & Zelazo 2016)
+$$u_i = k \sum_j \Big[-d_{ij}^*\,P(g_{ij})\,g_{ij}^* \;+\; s\,\mathrm{sat}\big(\|p_{ij}\| - d_{ij}^*\big)\,g_{ij}\Big],
+\qquad g_{ij} = \frac{p_{ij}}{\|p_{ij}\|},\; P(g) = I - g g^\top$$
+The first term is the bearing-only law; it reaches the target bearings up to translation and
+scale. A bearing-only law keeps the initial scale, so a weak range term ($s = 0.5$) sets the
+size. Bearings are world-frame directions, so like 4.1 it needs a common heading.
+
+### 4.4 Validation of the three families
+Kinematic study (single integrators, all 5 robots measured): every family converges to
+< 0.05 m from the Gazebo spawn and from 100/100 random starts in an 8 m square. Deployed
+stack in the arena (CBF, navigation, anchor, calm mapper, delay compensation), 25 seeds per
+cell, campaign simulator:
+
+| Controller | Channel | Converged | Collision-free (robots + obstacles) | Final shape error, median (max) | Closest robots |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| displacement | clean | 25/25 | 25/25 | 0.047 m (0.066) | 0.91 m |
+| displacement | impaired | 25/25 | 25/25 | 0.032 m (0.053) | 0.86 m |
+| distance + area | clean | 23/25 | 25/25 | 0.052 m (1.81) | 0.77 m |
+| distance + area | impaired | 23/25 | 25/25 | 0.053 m (0.98) | 0.68 m |
+| bearing | clean | 25/25 | 25/25 | 0.073 m (0.110) | 0.81 m |
+| bearing | impaired | 24/25 | 25/25 | 0.046 m (0.78) | 0.84 m |
+
+All 150 runs are collision-free. The distance controller's failures are deadlocks, not
+divergence: its formation may settle in any orientation, and in 2 of 25 runs per channel
+the orientation it picked from the scrambled spawn required two robots to swap sides of a
+rubble block through a narrow gap, where the CBF holds them (they stop, safe, at ~1.8 m
+error). Before the anchor and the navigation target followed the formation's own
+orientation, 7 of 50 runs failed this way.
+
+The navigation layer routes each robot toward its slot, found by fitting the formation
+template to the measured neighbours (`navigation.formation_target`); for the distance
+controller the fit includes a rotation, and the anchor uses the same fitted orientation, so
+it fixes only the formation's position (`fit_template_rotation`).
 
 ---
 
@@ -208,49 +246,46 @@ Symmetric multi-robot CBF filters are known to deadlock: in the original impleme
 
 ---
 
-## 6. Statistical Campaign (400 Runs)
+## 6. Statistical Campaign (425 Runs)
 
-Headless kinematic simulator (`campaign_simulator.py`) that mirrors the ROS node pipeline: real `RobotEKF`, the same controller and CBF code as the nodes, and drop, delay and jitter actually applied to every peer measurement. Crossing initial conditions, 30 s per run. "Impaired" = the launch file's fault defaults (15% drop, 80 ± 40 ms delay) plus range/bearing noise (0.05 m / 0.02 rad). "Reached formation" = shape error below 0.25 m for 2 s.
+Headless kinematic simulator (`campaign_simulator.py`) that mirrors the ROS node pipeline: real `RobotEKF`, the same controller, navigation and CBF code as the nodes, and drop, delay and jitter actually applied to every peer measurement. Crossing initial conditions in the arena of `collapsed_building.sdf`, 30 s per run, 25 seeds per condition. "Reached formation" = shape error below 0.25 m for 2 s. Contact with obstacles is not simulated, only measured. Reproduce with `ros2 run swarm_formation run_campaign --workers 6` (about 8 min on 8 cores).
 
-| Condition | Reached formation | Final shape error (m), mean [95% CI] | Min distance (m), mean / worst | Collision-free | Path length (m) | Est. error (m) |
+| Condition | Reached formation | Final shape error (m), mean [95% CI] | Robot-robot: collision-free / worst distance | Robot-obstacle: collision-free | Settled turn rate | Path length (m) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Unshielded consensus (clean) | 100% | 0.009 [0.007, 0.011] | 0.140 / 0.071 | 0% | 22.0 | 0.004 |
-| APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
-| CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
-| Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
-| Full stack, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
-| Full stack without Huber, impaired | 100% | 0.193 [0.178, 0.209] | 1.065 / 0.934 | 100% | 74.2 | 0.046 |
-| Full stack without EMA, impaired | 100% | 0.104 [0.094, 0.114] | 1.081 / 0.937 | 100% | 49.0 | 0.025 |
-| Full stack without heartbeat, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
-| CBF only (no resilience), impaired | 100% | 0.108 [0.099, 0.116] | 1.064 / 0.966 | 100% | 48.5 | 0.026 |
-| Full stack, 15% drop | 100% | 0.010 [0.008, 0.012] | 0.767 / 0.691 | 100% | 27.0 | 0.004 |
-| Full stack, 30% drop | 100% | 0.010 [0.009, 0.012] | 0.759 / 0.648 | 100% | 27.7 | 0.005 |
-| Full stack, 50% drop | 100% | 0.011 [0.009, 0.013] | 0.731 / 0.576 | 100% | 30.5 | 0.005 |
-| Full stack, 50 ms delay (matched margin) | 100% | 0.067 [0.056, 0.078] | 0.883 / 0.810 | 100% | 43.5 | 0.014 |
-| Full stack, 100 ms delay (matched margin) | 100% | 0.152 [0.133, 0.171] | 1.013 / 0.865 | 100% | 65.8 | 0.029 |
-| Full stack, 200 ms delay (matched margin) | 36% | 0.309 [0.289, 0.329] | 1.272 / 1.172 | 100% | 89.9 | 0.054 |
-| Full stack, 200 ms delay (fixed 50 ms margin) | 4% | 0.352 [0.329, 0.374] | 0.825 / 0.711 | 100% | 99.0 | 0.070 |
+| No avoidance (clean) | 100% | 0.042 [0.037, 0.047] | 0% / 0.15 m | 76% | 0.00 rad/s | 22.9 |
+| APF instead of CBF (clean) | 100% | 0.044 [0.038, 0.049] | 0% / 0.06 m | 80% | 0.00 rad/s | 22.6 |
+| **Deployed stack (clean)** | 100% | 0.047 [0.044, 0.050] | 100% / 0.91 m | 100% | 0.00 rad/s | 23.4 |
+| **Deployed stack, impaired** | 100% | 0.035 [0.029, 0.042] | 100% / 0.76 m | 100% | 0.23 rad/s | 26.1 |
+|   without navigation, impaired | 80% | 0.220 [0.066, 0.373] | 100% / 0.64 m | 100% | 0.48 rad/s | 26.9 |
+|   without anchor, impaired | 100% | 0.035 [0.030, 0.040] | 100% / 0.86 m | 100% | 0.25 rad/s | 25.5 |
+|   without delay compensation, impaired | 100% | 0.049 [0.038, 0.060] | 100% / 0.81 m | 100% | 0.54 rad/s | 32.2 |
+|   legacy twist mapper, impaired | 100% | 0.071 [0.061, 0.081] | 100% / 0.84 m | 100% | 2.63 rad/s | 38.5 |
+|   + Huber/EMA/heartbeat, impaired | 100% | 0.035 [0.030, 0.040] | 100% / 0.80 m | 100% | 0.03 rad/s | 26.3 |
+| 15% packet drop | 100% | 0.047 [0.044, 0.049] | 100% / 0.91 m | 100% | 0.00 rad/s | 23.2 |
+| 30% packet drop | 100% | 0.048 [0.045, 0.052] | 100% / 0.83 m | 100% | 0.00 rad/s | 23.1 |
+| 50% packet drop | 100% | 0.045 [0.042, 0.049] | 100% / 0.84 m | 100% | 0.01 rad/s | 23.2 |
+| 50 ms delay | 100% | 0.048 [0.045, 0.050] | 100% / 0.88 m | 100% | 0.00 rad/s | 22.7 |
+| 100 ms delay | 100% | 0.044 [0.040, 0.047] | 100% / 0.75 m | 100% | 0.00 rad/s | 23.3 |
+| 200 ms delay | 100% | 0.135 [0.120, 0.150] | 100% / 0.75 m | 100% | 1.88 rad/s | 38.6 |
+| 200 ms delay, CBF bound matched to 200 ms | 44% | 0.379 [0.256, 0.501] | 100% / 1.12 m | 100% | 1.69 rad/s | 53.3 |
+| Robot 4 stops for good at 5 s | 84% | 0.223 [0.209, 0.237] | 100% / 0.85 m | 100% | 0.24 rad/s | 25.4 |
 
-*Results regenerated on 2026-11-07 after the Phase A fixes. Measurements now carry their measurement time, are rotated with the heading at that time, take relative velocity only from distinct measurements, and are dropped once no longer delivered.*
+*Campaign re-run on 2026-11-07 on the deployed stack: every condition runs in the arena (obstacles, walls) with navigation, the anchor, the calm twist mapper, delay compensation and the 50 ms CBF delay bound, unless it varies one of them. "Impaired" = the launch file's fault settings (15% drop, 80 ± 40 ms delay) plus range/bearing noise (0.05 m / 0.02 rad).*
 
 **What the data supports:**
-- **Safety:** every run in all 15 conditions with avoidance stayed above the 0.50 m collision limit. The worst case was 0.576 m (full stack, 50% drop). Without avoidance, every run collided.
-- **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
-- **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
-- **Packet loss:** the formation forms precisely even at 50% drop (final error 0.011 m).
-- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.711 m). Formation accuracy degrades with delay: 0.067 m at 50 ms and 0.152 m at 100 ms. At 200 ms only 36% of runs reach the formation (4% with the fixed margin). The stack works to about 100 ms of delay.
-- **Resilience components, under nominal impairment:**
-  - **EMA hurts.** Removing it halves the final error (0.202 m → 0.104 m) and the path length (74.8 m → 49.0 m), because its lag adds to the network delay.
-  - **Huber is neutral** (0.193 m without it, overlapping CIs).
-  - **The heartbeat now works** (it uses measurement age, and is unit-tested), but it changes nothing here, because no peer is silent for more than 1.2 s in these conditions. A robot-loss scenario is needed to evaluate it.
-  - **CBF with no resilience component** (0.108 m) does as well as any combination.
+- **Safety:** the deployed stack never collided in any of its 375 runs (15 conditions): robots stayed at least 0.64 m apart and never touched an obstacle or wall. Without avoidance every run had a robot-robot collision and 24% hit an obstacle.
+- **APF is not a substitute in the arena.** With navigation, APF collided in every run: navigation replaces the force direction while a route is blocked, which also discards APF's repulsion. Without navigation (checked separately, 4 seeds), APF kept robots apart but hit obstacles in every run, because its campaign implementation only repels other robots. The CBF acts after navigation, so the deployed stack is unaffected.
+- **Accuracy:** the deployed stack converges in every run, clean (0.047 m) and impaired (0.035 m), and is unaffected by packet loss up to 50% and delay up to 100 ms (0.044-0.048 m).
+- **What matters in the ablation:** removing **navigation** hurts most (80% converge, 0.220 m): robots get trapped behind obstacles. The **legacy twist mapper** doubles the error (0.071 m) and spins at 2.63 rad/s once settled (0.23 with the calm mapper). Removing **delay compensation** costs a little (0.049 m, 23% longer paths, more turning). The **anchor** makes no difference here (0.035 m without it); its job is to stop the drift that pinned robots on the wall in Gazebo. Adding the old **Huber/EMA/heartbeat** layer is neutral (0.035 m).
+- **200 ms delay** is where accuracy breaks down (0.135 m, settled turning 1.88 rad/s), though safety holds even with the CBF bound left at 50 ms (worst distance 0.75 m). **Matching the bound to 200 ms makes things worse in the arena** (44% converge, 0.379 m): the larger margins close gaps between obstacles. A tight bound plus delay compensation is the better trade here.
+- **Permanent robot failure:** when robot 4 stops at 5 s, 84% of runs still reach the formation with the other robots placed around it (0.223 m). Nothing in the stack reassigns the lost robot's slot.
 
 ### Campaign Figures
 Generated from `campaign_results.json` into `results/M8/plots/`:
-1. `ablation_study_barchart.png`: leave-one-out ablation under nominal impairment.
-2. `safety_comparison_apf_vs_cbf.png`: minimum inter-robot distance distributions.
-3. `difficulty_sweep_packet_drop.png`: packet drop sweep (0–50%).
-4. `difficulty_sweep_latency.png`: applied latency sweep (0–200 ms).
+1. `ablation_study_barchart.png`: leave-one-out ablation of the deployed stack under nominal impairment.
+2. `safety_comparison_apf_vs_cbf.png`: minimum robot-robot distance in the arena (no avoidance, APF, deployed CBF).
+3. `difficulty_sweep_packet_drop.png`: packet drop sweep (0-50%).
+4. `difficulty_sweep_latency.png`: applied latency sweep (0-200 ms), deployed 50 ms bound vs matched bound.
 
 > The M8 numbers published before 2026-11-07 (325 runs, "47.2% energy reduction", "safe under 200 ms") came from a simulator that did not apply delay and from CBF runs that deadlocked. They are superseded; see the erratum in `reports/TECHNICAL_REPORT.md`.
 
@@ -326,16 +361,33 @@ Still open:
 - **Anchor transients.** The formation can assemble away from the anchor point and is
   then dragged into place; on the way, obstacles can hold some robots back and distort
   the shape for tens of seconds (`cbf_final_default`, 22 to 35 s).
-- **Single samples.** Each configuration was run once or twice in Gazebo (3 to 16 min per
-  run in WSL), so these are examples, not statistics; earlier runs showed large
-  run-to-run variation.
-- **Only the clean channel was tested in Gazebo.** Packet loss, delay, noise and robot
-  faults have so far only been evaluated in the kinematic campaign (Section 6).
+- **Single samples in the table above.** Each tuning configuration was run once or twice
+  (3 to 20 min per run in WSL). The final configuration was then repeated with perturbed
+  start poses (next table and Section 6.2).
+
+**Repeated runs of the final configuration** (2026-11-07, `results/phaseC/repeats/`):
+five runs with different start poses (`spawn_seed:=1..5 spawn_jitter:=0.15
+spawn_yaw_jitter:=0.2`, i.e. up to +/-0.15 m and +/-0.2 rad), 40 s each, mean +/- 95%
+t-interval over the 5 runs:
+
+| Channel | Converged | Collision-free | Converged at | Final shape error | Closest robots | Localization error |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| clean | 5/5 | 5/5 | 7.0 +/- 0.5 s | 0.048 +/- 0.028 m (max 0.075) | 1.14 +/- 0.03 m | 0.007 m |
+| launch fault settings (15% drop, 80 +/- 40 ms delay, robot 4 motors off 5-10 s) | 5/5 | 5/5 | 11.5 +/- 1.1 s | 0.151 +/- 0.074 m (max 0.241) | 1.01 +/- 0.07 m (min 0.94) | 0.023 m |
+
+Under faults the settled error keeps wobbling (mean 0.18 m, worst 0.50 m in one run), as
+in Section 6.2. No node crashed in any of the 10 runs. These runs predate the peer-
+covariance update of Section 6.3, which changes only how neighbour estimates are weighted
+in the EKF; `reproduce_all.sh` re-runs the default configuration on the current code.
+On the final code (2026-11-07, `results/reproduction/`, log in `reproduce_all.log`) that
+run converged at 7.8 s to a 0.077 m final error, closest robots 1.07 m, localization error
+0.011 m, and all 15 verification checks of the script passed (157 tests, Gazebo run, bag
+analysis, 425-run campaign, figures).
 
 ### 6.2 Gazebo Fault Tests
 
 Default configuration with `enable_faults:=true` (the launch file's network impairment), one
-run each, 40 s of simulated time, rosbags recorded. The CBF delay bound was left at its
+run each (repeated statistics for the launch fault settings are in Section 6.1), 40 s of simulated time, rosbags recorded. The CBF delay bound was left at its
 default 50 ms although the applied delay reaches 120 ms, as it would be deployed.
 
 | Run | Faults | Converged at | Settled shape error, mean / max | Final | Closest robots | Localization error | Settled turn / speed (rad/s, m/s) |
@@ -365,7 +417,10 @@ Findings:
 - **Delay compensation** (`delay_compensation: true`): each delayed neighbour measurement
   is corrected by the robot's own motion since it was taken (exact, from the EKF pose
   history). In the kinematic sim this cut the final error under the launch fault settings
-  from 0.09-0.12 to 0.07-0.10 m and rescued 200 ms runs (1/4 -> 3/4 converge); also
+  from 0.09-0.12 to 0.07-0.10 m. At 200 ms (four times the CBF delay bound) it is not a
+  clear win: over 8 seeds it lowered the median error (0.18 vs 0.22 m) but two runs stalled
+  (6/8 vs 8/8 converged; all 16 collision-free). Sharing peer covariance mattered more
+  there: without it only 5/8 converged with or without compensation. Also
   extrapolating the neighbour's motion made things worse (the velocity estimate is too
   noisy), so `peer_velocity_gain` stays 0. In Gazebo the effect was within run-to-run
   noise: settled robots move only ~2 cm in 100 ms, too little to explain the wobble.
@@ -385,6 +440,30 @@ Findings:
 
 ---
 
+### 6.3 Localization: Peer Covariance and the Landmark Map
+
+Campaign simulator, deployed stack under the launch fault settings, 10 seeds per cell
+(`use_landmarks`, `use_peer_covariance` are launch arguments and node parameters):
+
+| Landmark map | Peer covariance | Converged | Collision-free | Mean absolute localization error | Closest obstacle approach |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| yes | yes (default) | 10/10 | 10/10 | 0.015 m | 0.22 m |
+| yes | no | 10/10 | 10/10 | 0.016 m | 0.22 m |
+| no | yes | 10/10 | 10/10 | 0.81 m (max 1.54 m) | 0.05 m |
+| no | no | 10/10 | 10/10 | 0.91 m (max 1.82 m) | 0.05 m |
+
+- **Peer covariance** (`RobotEKF.update_range_bearing(target_cov=...)`): a neighbour's
+  estimate is not an exact beacon, so its covariance is added to the measurement noise,
+  R + J Sigma J^T. In a 2000-trial Monte Carlo test the filter is consistent with it
+  (2-DoF NEES 1.6-2.6) and overconfident without it (NEES > 10). Cross-correlation
+  between robots is still neglected.
+- **Without the landmark map** the absolute pose is unobservable (odometry and relative
+  measurements cannot fix the global frame) and drifts by about 1 m in 30 s; the
+  formation still converges because it is controlled from relative measurements. What
+  degrades are the map-based parts (navigation, anchor), which brought robots to within
+  5 cm of obstacles. The deployed configuration therefore keeps the landmark map; robots
+  also start with a known pose.
+
 ## 7. Quick Start: Build, Run & Reproduce
 
 ### 7.1 Native Installation (Ubuntu 24.04 LTS + ROS 2 Jazzy)
@@ -401,8 +480,9 @@ colcon build --symlink-install
 # Source overlay
 source install/setup.bash
 
-# Run full test suite (107 tests; 7 files need a sourced ROS 2 environment)
-colcon test --packages-select swarm_formation && colcon test-result --verbose
+# Run the full test suite (from the package directory, not the workspace root:
+# from the root the ament lint tests would also scan build/ and install/)
+cd src/swarm_formation && pytest-3 test -q && cd ../..
 ```
 
 ### 7.2 Docker Installation
@@ -413,16 +493,16 @@ docker build -t swarm_formation:latest .
 # Run reproduction inside container
 docker run --rm -it swarm_formation:latest ./reproduce_all.sh
 ```
+> The Dockerfile's package list was checked against Ubuntu 24.04 (an earlier version
+> requested `python3-pep257`, which does not exist there), but the image has not yet
+> been built on this project's development machine, which has no Docker installed.
 
 ### 7.3 Interactive 3D Gazebo Simulation
-To watch the 5-robot swarm form the pentagon in the collapsed-building arena with live 3D visualization:
+To watch the 5-robot swarm form the pentagon in the collapsed-building arena with live 3D
+visualization (default configuration; add `enable_faults:=true` for packet loss, delay and
+a temporary robot failure):
 ```bash
-ros2 launch swarm_formation gazebo_swarm_launch.py \
-  headless:=false \
-  controller_type:=displacement \
-  use_safety_filter:=true \
-  enable_faults:=true \
-  use_resilient_method:=true
+ros2 launch swarm_formation gazebo_swarm_launch.py headless:=false
 ```
 
 ### 7.4 Headless Simulation with Rosbag Recording
@@ -431,29 +511,31 @@ ros2 launch swarm_formation gazebo_swarm_launch.py \
   headless:=true \
   sim_duration:=40.0 \
   record_bag:=true \
-  bag_path:=results/my_bag \
-  controller_type:=displacement \
-  use_safety_filter:=true
+  bag_path:=results/my_bag
 ```
+Optional: `spawn_seed:=N spawn_jitter:=0.15 spawn_yaw_jitter:=0.2` perturbs the start poses
+(used for the repeated runs in Section 6.1).
 
 ### 7.5 Offline Bag Processing & Plotting
 ```bash
 # Extract offline Procrustes metrics from recorded bag
-ros2 run swarm_formation process_bag \
-  --input-bag results/my_bag \
-  --output-csv results/offline_metrics.csv
+ros2 run swarm_formation process_bag results/my_bag \
+  --output-csv results/offline_metrics.csv \
+  --output-json results/offline_summary.json
 
-# Generate publication trajectory plots from bag
-ros2 run swarm_formation plot_bag \
-  --input-bag results/my_bag \
+# Generate trajectory plots from the bag
+ros2 run swarm_formation plot_bag results/my_bag \
   --output-dir results/plots
 ```
 
 ### 7.6 One-Command Master Reproduction
-To run the end-to-end pipeline (build, test, simulation, bag processing, 325-run campaign, and figure generation):
+Builds, tests, runs the default configuration in Gazebo with a rosbag, processes the bag,
+runs the 425-run campaign, regenerates the figures, and then **verifies** the reproduced
+results against the claims in this README (exits non-zero if any check fails):
 ```bash
 ./reproduce_all.sh
 ```
+On a 4-core WSL2 machine this takes roughly 30 to 60 minutes (Gazebo runs below real time).
 
 ---
 
@@ -471,8 +553,8 @@ To run the end-to-end pipeline (build, test, simulation, bag processing, 325-run
 │   └── ...                            # Full audit & milestone history (M0 to M9)
 ├── results/
 │   ├── M7/gazebo_swarm_bag/           # Physics-verified 68k-message rosbag
-│   ├── M8/campaign_summary.csv        # Aggregated statistical summary (325 runs)
-│   ├── M8/campaign_results.json       # Full raw JSON results across 13 conditions
+│   ├── M8/campaign_summary.csv        # Aggregated statistical summary (425 runs)
+│   ├── M8/campaign_results.json       # Full raw JSON results across 17 conditions
 │   └── M8/plots/                      # 4 publication figures (Ablation, Safety, Sweeps)
 └── src/
     ├── swarm_interfaces/              # Custom ROS 2 msg & srv definitions

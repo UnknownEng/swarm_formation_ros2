@@ -217,6 +217,39 @@ class OccupancyGrid:
         return None
 
 
+def fit_template_rotation(
+    rel_displacements: Dict[int, Point],
+    target_offsets: Dict[int, Point],
+    active_mask: Optional[Dict[int, bool]] = None,
+) -> float:
+    """
+    Best-fit rotation (rad) of the formation template onto the measured peers.
+
+    Least-squares angle R minimising sum_j ||R d_ij + t - p_ij||^2 over translation and
+    rotation; 0 with fewer than two peers. Used by the distance controller, which leaves
+    the formation's orientation free.
+    """
+    pairs = [
+        (rel_displacements[pid], target_offsets[pid])
+        for pid in sorted(rel_displacements)
+        if pid in target_offsets
+        and (active_mask is None or active_mask.get(pid, True))
+    ]
+    if len(pairs) < 2:
+        return 0.0
+    count = len(pairs)
+    rbx = sum(r[0] for r, _ in pairs) / count
+    rby = sum(r[1] for r, _ in pairs) / count
+    obx = sum(o[0] for _, o in pairs) / count
+    oby = sum(o[1] for _, o in pairs) / count
+    num = den = 0.0
+    for (rx, ry), (ox, oy) in pairs:
+        ox, oy, rx, ry = ox - obx, oy - oby, rx - rbx, ry - rby
+        num += ox * ry - oy * rx
+        den += ox * rx + oy * ry
+    return math.atan2(num, den)
+
+
 def formation_target(
     est_pos: Point,
     rel_displacements: Dict[int, Point],
@@ -225,32 +258,47 @@ def formation_target(
     consensus_gain: float = 1.0,
     anchor_slot: Optional[Point] = None,
     anchor_gain: float = 0.0,
+    fit_rotation: bool = False,
 ) -> Optional[Point]:
     """
     World point where the formation (and optional anchor) forces would balance.
 
-    Consensus alone is satisfied at p_i + mean_j(p_ij - d_ij). With an anchor pulling
-    toward ``anchor_slot`` the linear forces k_p * sum_j(e_j) + g * (slot - p) vanish at
-    p_i + (k_p * sum_j e_j + g * (slot - p_i)) / (k_p * n + g); routing toward that point
-    lets the anchor move a robot around obstacles instead of pinning it against one.
-    Returns None when there is neither a neighbor nor an anchor.
+    The robot's slot is found by fitting the formation template to the measured peers:
+    peer j should sit at R d_ij + t, and the robot's own slot is t. Without rotation
+    (displacement and bearing control, which fix the formation's orientation) the fit is
+    t = mean_j(p_ij - d_ij), the point where consensus balances. With ``fit_rotation``
+    (distance control, which leaves the orientation free) R is the best-fit rotation, so
+    the target does not depend on a common heading either.
+
+    With an anchor pulling toward ``anchor_slot`` the linear forces k_p * n * (t - p) +
+    g * (slot - p) vanish at p_i + (k_p * n * t + g * (slot - p_i)) / (k_p * n + g);
+    routing toward that point lets the anchor move a robot around obstacles instead of
+    pinning it against one. Returns None when there is neither a neighbor nor an anchor.
     """
-    sx = sy = 0.0
-    count = 0
-    for pid, (dx, dy) in rel_displacements.items():
-        if pid not in target_offsets:
-            continue
-        if active_mask is not None and not active_mask.get(pid, True):
-            continue
-        tx, ty = target_offsets[pid]
-        sx += dx - tx
-        sy += dy - ty
-        count += 1
+    pairs = [
+        (rel_displacements[pid], target_offsets[pid])
+        for pid in sorted(rel_displacements)
+        if pid in target_offsets
+        and (active_mask is None or active_mask.get(pid, True))
+    ]
+    count = len(pairs)
     use_anchor = anchor_slot is not None and anchor_gain > 0.0
     if count == 0 and not use_anchor:
         return None
-    wx = consensus_gain * sx
-    wy = consensus_gain * sy
+    tx = ty = 0.0
+    if count > 0:
+        rbx = sum(r[0] for r, _ in pairs) / count
+        rby = sum(r[1] for r, _ in pairs) / count
+        obx = sum(o[0] for _, o in pairs) / count
+        oby = sum(o[1] for _, o in pairs) / count
+        c, s_ = 1.0, 0.0
+        if fit_rotation:
+            theta = fit_template_rotation(rel_displacements, target_offsets, active_mask)
+            c, s_ = math.cos(theta), math.sin(theta)
+        tx = rbx - (c * obx - s_ * oby)
+        ty = rby - (s_ * obx + c * oby)
+    wx = consensus_gain * count * tx
+    wy = consensus_gain * count * ty
     weight = consensus_gain * count
     if use_anchor:
         wx += anchor_gain * (anchor_slot[0] - est_pos[0])
@@ -260,10 +308,10 @@ def formation_target(
 
 
 def anchor_slot_position(
-    robot_id: int, total_robots: int, radius: float, center: Point
+    robot_id: int, total_robots: int, radius: float, center: Point, rotation: float = 0.0
 ) -> Point:
-    """World position of a robot's slot around a fixed formation centre."""
-    angle = 2.0 * math.pi * ((robot_id - 1) % total_robots) / total_robots
+    """World position of a robot's slot around a fixed centre (pattern rotated by rotation)."""
+    angle = 2.0 * math.pi * ((robot_id - 1) % total_robots) / total_robots + rotation
     return center[0] + radius * math.cos(angle), center[1] + radius * math.sin(angle)
 
 

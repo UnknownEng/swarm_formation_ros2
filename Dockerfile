@@ -1,5 +1,7 @@
 # ==============================================================================
-# Dockerfile: Physics-Verified Decentralized Swarm Formation Control
+# Dockerfile: Decentralized Swarm Formation Control
+# (python3-pep257 does not exist on Ubuntu 24.04; the ament lint tests need the
+#  ros-jazzy-ament-* packages instead. procps provides `ps` for reproduce_all.sh.)
 # ROS 2 Jazzy Jalisco + Gazebo Harmonic (8.x) on Ubuntu 24.04 LTS (Noble Numbat)
 # ==============================================================================
 
@@ -26,7 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pytest \
     python3-pytest-cov \
     python3-flake8 \
-    python3-pep257 \
+    ros-jazzy-ament-copyright \
+    ros-jazzy-ament-flake8 \
+    ros-jazzy-ament-pep257 \
+    procps \
     python3-numpy \
     python3-scipy \
     python3-matplotlib \

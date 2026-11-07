@@ -22,11 +22,11 @@ import tempfile
 from swarm_formation.campaign_runner import run_campaign
 from swarm_formation.campaign_visualizer import CampaignVisualizer
 
-SAFETY_CONDITIONS = ['baseline_unshielded', 'apf_only', 'cbf_qp_only', 'full_resilient_cbf']
+SAFETY_CONDITIONS = ['arena_unshielded', 'arena_apf', 'deployed_clean', 'deployed_impaired']
 
 
 def test_m8_acceptance_statistical_campaign_execution():
-    """20-seed campaign: CIs present, CBF is safe, and safety does not cost convergence."""
+    """20-seed arena campaign: CIs present, the deployed stack is safe and converges."""
     tmp_dir = tempfile.mkdtemp(prefix='test_m8_acceptance_')
     plots_dir = os.path.join(tmp_dir, 'plots')
 
@@ -53,20 +53,21 @@ def test_m8_acceptance_statistical_campaign_execution():
             assert summary['shape_error_ci_lower'] <= summary['shape_error_mean']
             assert summary['shape_error_ci_upper'] >= summary['shape_error_mean']
 
-        baseline = data['baseline_unshielded']['summary']
-        cbf = data['cbf_qp_only']['summary']
-        full = data['full_resilient_cbf']['summary']
+        baseline = data['arena_unshielded']['summary']
+        cbf = data['deployed_clean']['summary']
+        full = data['deployed_impaired']['summary']
 
         # 2. The crossing scenario is genuinely dangerous without avoidance
         assert baseline['collision_free_rate_pct'] < 100.0
 
-        # 3. Safety: every CBF run respects the 0.50 m collision limit
+        # 3. Safety: every deployed run keeps robots apart and off every obstacle and wall
         for summary in (cbf, full):
             assert summary['collision_free_rate_pct'] == 100.0
             assert summary['min_distance_worst'] >= 0.50
+            assert summary['obstacle_collision_free_rate_pct'] == 100.0
 
         # 4. Safety must not be bought by deadlock: the formation must still form
-        for name, summary in (('cbf_qp_only', cbf), ('full_resilient_cbf', full)):
+        for name, summary in (('deployed_clean', cbf), ('deployed_impaired', full)):
             assert summary['convergence_rate_pct'] >= 90.0, (
                 f"{name} reached the formation in only {summary['convergence_rate_pct']:.0f}% "
                 'of runs'

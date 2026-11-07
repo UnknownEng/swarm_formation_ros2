@@ -27,6 +27,7 @@ from .controllers import create_controller
 from .kinematics import compute_unicycle_twist, UnicycleMapper
 from .navigation import (
     anchor_slot_position,
+    fit_template_rotation,
     formation_target,
     navigation_force,
     NavigationGuide,
@@ -366,6 +367,14 @@ class GazeboSwarmNode(Node):
             )
 
         f_form = (fx, fy)
+        # Distance control leaves the formation's orientation free: the anchor and the
+        # navigation target then follow the formation's current best-fit orientation.
+        free_rotation = self.controller.name == 'distance'
+        pattern_rotation = 0.0
+        if free_rotation and self.anchor_gain > 0.0:
+            pattern_rotation = fit_template_rotation(
+                self._current_displacements(curr_time), self.target_offsets
+            )
         nav_active = 0.0
         steer_point = None
         target = None
@@ -375,12 +384,14 @@ class GazeboSwarmNode(Node):
         if self.nav_guide is not None:
             pos = (self.est_x, self.est_y)
             rel = self._current_displacements(curr_time)
+            anchor_slot = anchor_slot_position(
+                self.robot_id, self.total_robots, self.radius, self.formation_center,
+                rotation=pattern_rotation,
+            )
             target = formation_target(
                 pos, rel, self.target_offsets, consensus_gain=self.k_p,
-                anchor_slot=anchor_slot_position(
-                    self.robot_id, self.total_robots, self.radius, self.formation_center
-                ),
-                anchor_gain=self.anchor_gain,
+                anchor_slot=anchor_slot, anchor_gain=self.anchor_gain,
+                fit_rotation=free_rotation,
             )
             steer_point = self.nav_guide.steer(curr_time, pos, target)
             if steer_point is not None:
@@ -391,7 +402,7 @@ class GazeboSwarmNode(Node):
         # Optional formation anchor (virtual leader around a fixed centre)
         fax, fay = compute_anchor_force(
             self.robot_id, self.total_robots, self.radius, self.formation_center,
-            (self.est_x, self.est_y), self.anchor_gain,
+            (self.est_x, self.est_y), self.anchor_gain, rotation=pattern_rotation,
         )
         fx += fax
         fy += fay

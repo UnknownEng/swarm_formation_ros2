@@ -41,11 +41,11 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='kali',
-    maintainer_email='kali@todo.todo',
+    maintainer='Mansoor Ahmed Rind',
+    maintainer_email='mansoorahmedrind515@gmail.com',
     description=(
-        'Decentralized robot shape formation with resilient consensus and APF'
-        ' safety barrier in Gazebo Harmonic'
+        'Decentralized multi-robot formation control with relative sensing, cooperative'
+        ' EKF localization, map-based navigation and a CBF-QP safety filter'
     ),
     license='Apache-2.0',
     tests_require=['pytest'],

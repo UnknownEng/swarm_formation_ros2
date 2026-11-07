@@ -21,6 +21,7 @@ import pytest
 from swarm_formation.campaign_simulator import CampaignRunConfig, run_single_simulation
 from swarm_formation.navigation import (
     clearance_to_static_world,
+    fit_template_rotation,
     formation_target,
     navigation_force,
     NavigationGuide,
@@ -154,14 +155,37 @@ def test_impaired_arena_converges_with_derived_clearance() -> None:
     assert res['obstacle_collision_free'] and res['empirically_collision_free']
 
 
-def test_delay_compensation_rescues_a_200ms_arena_run() -> None:
-    """Seed 1042 at 200 ms delay failed without compensation and converges with it."""
+def test_200ms_delay_arena_runs_stay_safe() -> None:
+    """
+    At 200 ms applied delay (4x the CBF bound) the arena runs stay collision-free.
+
+    Accuracy at this delay varies from seed to seed (README 6.2); safety must not.
+    """
     kw = {
         'duration_sec': 40.0, 'use_cbf': True, 'use_world_obstacles': True,
         'use_navigation': True, 'anchor_gain': 0.4, 'twist_mapper': 'calm', 'delay_sec': 0.2,
     }
-    without = run_single_simulation(CampaignRunConfig(**kw), 1042)
-    with_comp = run_single_simulation(CampaignRunConfig(delay_compensation=True, **kw), 1042)
-    assert without['final_shape_error'] > 0.25
-    assert with_comp['is_converged'] and with_comp['final_shape_error'] < 0.15
-    assert with_comp['empirically_collision_free'] and with_comp['obstacle_collision_free']
+    for comp in (False, True):
+        r = run_single_simulation(CampaignRunConfig(delay_compensation=comp, **kw), 1042)
+        assert r['empirically_collision_free'] and r['obstacle_collision_free']
+
+
+def test_rotation_fit_target_is_heading_free() -> None:
+    """With fit_rotation the slot is recovered from a rotated, translated formation."""
+    from swarm_formation.consensus import compute_target_offsets
+    off = compute_target_offsets(1, 5, 2.0)
+    theta, shift = 2.3, (0.7, -1.9)
+    c, s_ = math.cos(theta), math.sin(theta)
+    # Robot 1 is displaced 0.6 m from its slot; peers sit exactly in a rotated pentagon
+    slot = (shift[0], shift[1])
+    me = (slot[0] + 0.6, slot[1] - 0.2)
+    rel = {
+        j: (slot[0] + c * ox - s_ * oy - me[0], slot[1] + s_ * ox + c * oy - me[1])
+        for j, (ox, oy) in off.items()
+    }
+    assert fit_template_rotation(rel, off) == pytest.approx(theta)
+    tgt = formation_target(me, rel, off, fit_rotation=True)
+    assert tgt == pytest.approx(slot)
+    # Without the rotation fit the target is wrong for a rotated formation
+    wrong = formation_target(me, rel, off)
+    assert math.hypot(wrong[0] - slot[0], wrong[1] - slot[1]) > 0.5

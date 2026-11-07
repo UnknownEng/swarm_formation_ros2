@@ -17,8 +17,9 @@ Swarm formation controllers behind a common interface.
 
 Supports:
 1. Displacement-based consensus (Ren & Beard 2008, Oh et al. 2015).
-2. Distance-based rigidity control (Krick et al. 2009).
-3. Bearing-based rigidity control with scale anchoring (Zhao & Zelazo 2016).
+2. Distance-based gradient control with signed-area constraints (Krick et al. 2009;
+   Anderson et al. 2017).
+3. Bearing-only control (Zhao & Zelazo 2016) with a weak distance term for the scale.
 """
 
 from abc import ABC, abstractmethod
@@ -153,19 +154,34 @@ class DisplacementController(SwarmControllerBase):
 
 class DistanceController(SwarmControllerBase):
     """
-    Distance-based formation controller based on graph rigidity.
+    Distance-based formation controller with signed-area constraints.
 
-    Incorporates distance gradient (Krick et al. 2009) and almost-global
-    topological guidance (Oh & Ahn 2014).
+    u_i = k * [ sum_j sat(||p_ij|| - d*_ij) p_ij / ||p_ij||
+                - a * sum_{j<k} sat(A_ijk - A*_ijk) dA_ijk/dp_i ]
+
+    with A_ijk = 1/2 (p_ij x p_ik) the signed area of triangle (i, j, k). Both terms are
+    invariant to rotations of the robot's measurement frame, so, unlike displacement
+    consensus, no common heading is needed. The first term is the gradient law of Krick,
+    Broucke and Francis (IJC 2009); on its own it only converges locally (a scrambled
+    start stalls in an undesired equilibrium) and cannot tell the formation from its
+    mirror image. The signed areas fix the orientation and remove those equilibria
+    (Anderson, Sun, Sugie et al., 'Formation shape control with distance and area
+    constraints', IFAC J. Syst. Control 1, 2017). ``area_gain = 0`` gives the pure law.
+
+    The earlier version added the displacement-consensus term as "orientation guidance",
+    which made it a displacement controller in disguise; ``orientation_gain_ratio`` is kept
+    for backward compatibility and is 0 by default.
     """
 
-    def __init__(self, orientation_gain_ratio: float = 0.25) -> None:
+    def __init__(self, area_gain: float = 0.5, orientation_gain_ratio: float = 0.0) -> None:
         """
         Initialize DistanceController.
 
-        :param orientation_gain_ratio: Guidance gain ratio resolving topological saddle points.
+        :param area_gain: Weight of the signed-area terms (0 = pure distance gradient).
+        :param orientation_gain_ratio: Optional displacement-term weight (0 = none).
         """
         super().__init__('distance')
+        self.area_gain = area_gain
         self.orientation_gain_ratio = orientation_gain_ratio
 
     def compute_control_force(
@@ -178,7 +194,7 @@ class DistanceController(SwarmControllerBase):
         huber_delta: float = 1.0,
         active_mask: Optional[Dict[int, bool]] = None,
     ) -> Tuple[float, float]:
-        """Compute distance gradient rigidity control force with saddle-point untangling."""
+        """Compute the distance-gradient force (optionally plus a displacement term)."""
         target_distances = compute_target_distances(robot_id, total_robots, radius)
         target_offsets = compute_target_offsets(robot_id, total_robots, radius)
         f_x = 0.0
@@ -194,53 +210,83 @@ class DistanceController(SwarmControllerBase):
             if d_measured < 1e-4:
                 continue
 
-            d_star = target_distances[peer_id]
-            dist_err = d_measured - d_star
-
-            # Huber saturation on distance error magnitude
+            dist_err = d_measured - target_distances[peer_id]
             if abs(dist_err) > huber_delta:
                 dist_err = math.copysign(huber_delta, dist_err)
 
-            # Gradient direction: unit vector pointing from robot to peer
-            unit_x = actual_dx / d_measured
-            unit_y = actual_dy / d_measured
+            # Too far: pulled toward the peer (+unit); too close: pushed away (-unit)
+            f_x += gain * dist_err * actual_dx / d_measured
+            f_y += gain * dist_err * actual_dy / d_measured
 
-            # Positive error (too far) pulls robot towards peer (+unit)
-            # Negative error (too close) pushes robot away from peer (-unit)
-            f_x += gain * dist_err * unit_x
-            f_y += gain * dist_err * unit_y
-
-            # Orientation guidance to resolve non-planar/inverted local minima
             if self.orientation_gain_ratio > 0.0 and peer_id in target_offsets:
                 tgt_x, tgt_y = target_offsets[peer_id]
-                og_x = actual_dx - tgt_x
-                og_y = actual_dy - tgt_y
+                og_x, og_y = actual_dx - tgt_x, actual_dy - tgt_y
                 og_norm = math.hypot(og_x, og_y)
                 if og_norm > huber_delta and og_norm > 1e-6:
-                    scale = huber_delta / og_norm
-                    f_x += gain * self.orientation_gain_ratio * scale * og_x
-                    f_y += gain * self.orientation_gain_ratio * scale * og_y
-                else:
-                    f_x += gain * self.orientation_gain_ratio * og_x
-                    f_y += gain * self.orientation_gain_ratio * og_y
+                    og_x, og_y = og_x * huber_delta / og_norm, og_y * huber_delta / og_norm
+                f_x += gain * self.orientation_gain_ratio * og_x
+                f_y += gain * self.orientation_gain_ratio * og_y
 
+        if self.area_gain > 0.0:
+            a_x, a_y = self._area_force(rel_displacements, target_offsets, huber_delta,
+                                        active_mask)
+            f_x += gain * self.area_gain * a_x
+            f_y += gain * self.area_gain * a_y
+
+        return f_x, f_y
+
+    @staticmethod
+    def _area_force(
+        rel_displacements: Dict[int, Tuple[float, float]],
+        target_offsets: Dict[int, Tuple[float, float]],
+        huber_delta: float,
+        active_mask: Optional[Dict[int, bool]],
+    ) -> Tuple[float, float]:
+        """Return -sum_{j<k} sat(A_ijk - A*_ijk) * dA_ijk/dp_i over measured peer pairs."""
+        ids = sorted(
+            pid for pid in rel_displacements
+            if pid in target_offsets
+            and (active_mask is None or active_mask.get(pid, True))
+        )
+        f_x = 0.0
+        f_y = 0.0
+        for a, j in enumerate(ids):
+            rjx, rjy = rel_displacements[j]
+            tjx, tjy = target_offsets[j]
+            for k in ids[a + 1:]:
+                rkx, rky = rel_displacements[k]
+                tkx, tky = target_offsets[k]
+                area_err = 0.5 * (rjx * rky - rjy * rkx) - 0.5 * (tjx * tky - tjy * tkx)
+                if abs(area_err) > huber_delta:
+                    area_err = math.copysign(huber_delta, area_err)
+                # dA/dp_i for A = 1/2 (p_j - p_i) x (p_k - p_i)
+                f_x -= area_err * 0.5 * (rjy - rky)
+                f_y -= area_err * 0.5 * (rkx - rjx)
         return f_x, f_y
 
 
 class BearingController(SwarmControllerBase):
     """
-    Bearing-based formation controller with orthogonal projection and scale anchor.
+    Bearing-only formation controller with a weak distance term for the scale.
 
-    Reference:
-    Zhao, S. and Zelazo, D., 'Bearing rigidity and almost global bearing-only
-    formation stabilization', IEEE Transactions on Automatic Control 61(5), 2016.
+    u_i = k * sum_j [ -d*_ij * P(g_ij) g*_ij  +  s * sat(||p_ij|| - d*_ij) * g_ij ]
+
+    where g_ij = p_ij / ||p_ij|| is the *measured* bearing, g*_ij the desired bearing and
+    P(g) = I - g g^T. The first term is the bearing-only law of Zhao and Zelazo (2016); it
+    reaches the target bearings up to translation and scale (scaled by d*_ij so that it
+    matches a displacement error near the target). Bearing-only laws preserve the initial
+    formation scale, so the second, weak distance term (``scale_gain_ratio``) fixes the
+    size. Bearings are world-frame directions, so the formation's orientation is fixed.
+
+    Reference: Zhao, S. and Zelazo, D., 'Bearing rigidity and almost global bearing-only
+    formation stabilization', IEEE TAC 61(5), 2016.
     """
 
-    def __init__(self, scale_gain_ratio: float = 0.8) -> None:
+    def __init__(self, scale_gain_ratio: float = 0.5) -> None:
         """
         Initialize BearingController.
 
-        :param scale_gain_ratio: Gain multiplier for radial distance scaling.
+        :param scale_gain_ratio: Weight of the distance (scale) term relative to bearing.
         """
         super().__init__('bearing')
         self.scale_gain_ratio = scale_gain_ratio
@@ -255,7 +301,7 @@ class BearingController(SwarmControllerBase):
         huber_delta: float = 1.0,
         active_mask: Optional[Dict[int, bool]] = None,
     ) -> Tuple[float, float]:
-        """Compute bearing projection and scale-anchored control force."""
+        """Compute the bearing-only force plus the weak scale term."""
         target_bearings = compute_target_bearings(robot_id, total_robots, radius)
         f_x = 0.0
         f_y = 0.0
@@ -265,31 +311,25 @@ class BearingController(SwarmControllerBase):
                 continue
             if peer_id not in target_bearings:
                 continue
+            dist = math.hypot(dx, dy)
+            if dist < 1e-4:
+                continue
 
+            gx, gy = dx / dist, dy / dist                 # measured bearing
             gx_star, gy_star, d_star = target_bearings[peer_id]
 
-            # Orthogonal projection operator P_g* = I - g* g*^T
-            # P_g* * p = p - (g*^T p) * g*
-            proj_along = dx * gx_star + dy * gy_star
-            ortho_x = dx - proj_along * gx_star
-            ortho_y = dy - proj_along * gy_star
+            # -P(g) g* = -(g* - (g . g*) g)
+            dot = gx * gx_star + gy * gy_star
+            bx = -(gx_star - dot * gx)
+            by = -(gy_star - dot * gy)
+            f_x += gain * d_star * bx
+            f_y += gain * d_star * by
 
-            # Radial distance mismatch along desired bearing line
-            dist_mismatch = proj_along - d_star
-
-            # Apply Huber saturation to both components
-            ortho_norm = math.hypot(ortho_x, ortho_y)
-            if ortho_norm > huber_delta and ortho_norm > 1e-6:
-                scale_ortho = huber_delta / ortho_norm
-                ortho_x *= scale_ortho
-                ortho_y *= scale_ortho
-
-            if abs(dist_mismatch) > huber_delta:
-                dist_mismatch = math.copysign(huber_delta, dist_mismatch)
-
-            # Combined bearing orthogonal force + scale alignment force
-            f_x += gain * (ortho_x + self.scale_gain_ratio * dist_mismatch * gx_star)
-            f_y += gain * (ortho_y + self.scale_gain_ratio * dist_mismatch * gy_star)
+            dist_err = dist - d_star
+            if abs(dist_err) > huber_delta:
+                dist_err = math.copysign(huber_delta, dist_err)
+            f_x += gain * self.scale_gain_ratio * dist_err * gx
+            f_y += gain * self.scale_gain_ratio * dist_err * gy
 
         return f_x, f_y
 

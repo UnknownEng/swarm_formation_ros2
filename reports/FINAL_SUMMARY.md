@@ -26,40 +26,37 @@
 >
 > **Still not validated:** none of the fixes has been run in Gazebo yet. Every Gazebo run committed before this erratum that used the safety layer ended without reaching the formation.
 
-### Current M8 results (400 runs, 25 seeds × 16 conditions)
+### Current M8 results (425 runs, 25 seeds × 17 conditions, deployed stack)
 
-| Condition | Reached formation | Final shape error (m), mean [95% CI] | Min distance (m), mean / worst | Collision-free | Path length (m) | Est. error (m) |
+| Condition | Reached formation | Final shape error (m), mean [95% CI] | Robot-robot: collision-free / worst distance | Robot-obstacle: collision-free | Settled turn rate | Path length (m) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Unshielded consensus (clean) | 100% | 0.009 [0.007, 0.011] | 0.140 / 0.071 | 0% | 22.0 | 0.004 |
-| APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
-| CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
-| Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
-| Full stack, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
-| Full stack without Huber, impaired | 100% | 0.193 [0.178, 0.209] | 1.065 / 0.934 | 100% | 74.2 | 0.046 |
-| Full stack without EMA, impaired | 100% | 0.104 [0.094, 0.114] | 1.081 / 0.937 | 100% | 49.0 | 0.025 |
-| Full stack without heartbeat, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
-| CBF only (no resilience), impaired | 100% | 0.108 [0.099, 0.116] | 1.064 / 0.966 | 100% | 48.5 | 0.026 |
-| Full stack, 15% drop | 100% | 0.010 [0.008, 0.012] | 0.767 / 0.691 | 100% | 27.0 | 0.004 |
-| Full stack, 30% drop | 100% | 0.010 [0.009, 0.012] | 0.759 / 0.648 | 100% | 27.7 | 0.005 |
-| Full stack, 50% drop | 100% | 0.011 [0.009, 0.013] | 0.731 / 0.576 | 100% | 30.5 | 0.005 |
-| Full stack, 50 ms delay (matched margin) | 100% | 0.067 [0.056, 0.078] | 0.883 / 0.810 | 100% | 43.5 | 0.014 |
-| Full stack, 100 ms delay (matched margin) | 100% | 0.152 [0.133, 0.171] | 1.013 / 0.865 | 100% | 65.8 | 0.029 |
-| Full stack, 200 ms delay (matched margin) | 36% | 0.309 [0.289, 0.329] | 1.272 / 1.172 | 100% | 89.9 | 0.054 |
-| Full stack, 200 ms delay (fixed 50 ms margin) | 4% | 0.352 [0.329, 0.374] | 0.825 / 0.711 | 100% | 99.0 | 0.070 |
+| No avoidance (clean) | 100% | 0.042 [0.037, 0.047] | 0% / 0.15 m | 76% | 0.00 rad/s | 22.9 |
+| APF instead of CBF (clean) | 100% | 0.044 [0.038, 0.049] | 0% / 0.06 m | 80% | 0.00 rad/s | 22.6 |
+| **Deployed stack (clean)** | 100% | 0.047 [0.044, 0.050] | 100% / 0.91 m | 100% | 0.00 rad/s | 23.4 |
+| **Deployed stack, impaired** | 100% | 0.035 [0.029, 0.042] | 100% / 0.76 m | 100% | 0.23 rad/s | 26.1 |
+|   without navigation, impaired | 80% | 0.220 [0.066, 0.373] | 100% / 0.64 m | 100% | 0.48 rad/s | 26.9 |
+|   without anchor, impaired | 100% | 0.035 [0.030, 0.040] | 100% / 0.86 m | 100% | 0.25 rad/s | 25.5 |
+|   without delay compensation, impaired | 100% | 0.049 [0.038, 0.060] | 100% / 0.81 m | 100% | 0.54 rad/s | 32.2 |
+|   legacy twist mapper, impaired | 100% | 0.071 [0.061, 0.081] | 100% / 0.84 m | 100% | 2.63 rad/s | 38.5 |
+|   + Huber/EMA/heartbeat, impaired | 100% | 0.035 [0.030, 0.040] | 100% / 0.80 m | 100% | 0.03 rad/s | 26.3 |
+| 15% packet drop | 100% | 0.047 [0.044, 0.049] | 100% / 0.91 m | 100% | 0.00 rad/s | 23.2 |
+| 30% packet drop | 100% | 0.048 [0.045, 0.052] | 100% / 0.83 m | 100% | 0.00 rad/s | 23.1 |
+| 50% packet drop | 100% | 0.045 [0.042, 0.049] | 100% / 0.84 m | 100% | 0.01 rad/s | 23.2 |
+| 50 ms delay | 100% | 0.048 [0.045, 0.050] | 100% / 0.88 m | 100% | 0.00 rad/s | 22.7 |
+| 100 ms delay | 100% | 0.044 [0.040, 0.047] | 100% / 0.75 m | 100% | 0.00 rad/s | 23.3 |
+| 200 ms delay | 100% | 0.135 [0.120, 0.150] | 100% / 0.75 m | 100% | 1.88 rad/s | 38.6 |
+| 200 ms delay, CBF bound matched to 200 ms | 44% | 0.379 [0.256, 0.501] | 100% / 1.12 m | 100% | 1.69 rad/s | 53.3 |
+| Robot 4 stops for good at 5 s | 84% | 0.223 [0.209, 0.237] | 100% / 0.85 m | 100% | 0.24 rad/s | 25.4 |
 
-*Results regenerated on 2026-11-07 after the Phase A fixes. Measurements now carry their measurement time, are rotated with the heading at that time, take relative velocity only from distinct measurements, and are dropped once no longer delivered.*
+*Campaign re-run on 2026-11-07 on the deployed stack: every condition runs in the arena (obstacles, walls) with navigation, the anchor, the calm twist mapper, delay compensation and the 50 ms CBF delay bound, unless it varies one of them. "Impaired" = the launch file's fault settings (15% drop, 80 ± 40 ms delay) plus range/bearing noise (0.05 m / 0.02 rad).*
 
 **What the data supports:**
-- **Safety:** every run in all 15 conditions with avoidance stayed above the 0.50 m collision limit. The worst case was 0.576 m (full stack, 50% drop). Without avoidance, every run collided.
-- **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
-- **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
-- **Packet loss:** the formation forms precisely even at 50% drop (final error 0.011 m).
-- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.711 m). Formation accuracy degrades with delay: 0.067 m at 50 ms and 0.152 m at 100 ms. At 200 ms only 36% of runs reach the formation (4% with the fixed margin). The stack works to about 100 ms of delay.
-- **Resilience components, under nominal impairment:**
-  - **EMA hurts.** Removing it halves the final error (0.202 m → 0.104 m) and the path length (74.8 m → 49.0 m), because its lag adds to the network delay.
-  - **Huber is neutral** (0.193 m without it, overlapping CIs).
-  - **The heartbeat now works** (it uses measurement age, and is unit-tested), but it changes nothing here, because no peer is silent for more than 1.2 s in these conditions. A robot-loss scenario is needed to evaluate it.
-  - **CBF with no resilience component** (0.108 m) does as well as any combination.
+- **Safety:** the deployed stack never collided in any of its 375 runs (15 conditions): robots stayed at least 0.64 m apart and never touched an obstacle or wall. Without avoidance every run had a robot-robot collision and 24% hit an obstacle.
+- **APF is not a substitute in the arena.** With navigation, APF collided in every run: navigation replaces the force direction while a route is blocked, which also discards APF's repulsion. Without navigation (checked separately, 4 seeds), APF kept robots apart but hit obstacles in every run, because its campaign implementation only repels other robots. The CBF acts after navigation, so the deployed stack is unaffected.
+- **Accuracy:** the deployed stack converges in every run, clean (0.047 m) and impaired (0.035 m), and is unaffected by packet loss up to 50% and delay up to 100 ms (0.044-0.048 m).
+- **What matters in the ablation:** removing **navigation** hurts most (80% converge, 0.220 m): robots get trapped behind obstacles. The **legacy twist mapper** doubles the error (0.071 m) and spins at 2.63 rad/s once settled (0.23 with the calm mapper). Removing **delay compensation** costs a little (0.049 m, 23% longer paths, more turning). The **anchor** makes no difference here (0.035 m without it); its job is to stop the drift that pinned robots on the wall in Gazebo. Adding the old **Huber/EMA/heartbeat** layer is neutral (0.035 m).
+- **200 ms delay** is where accuracy breaks down (0.135 m, settled turning 1.88 rad/s), though safety holds even with the CBF bound left at 50 ms (worst distance 0.75 m). **Matching the bound to 200 ms makes things worse in the arena** (44% converge, 0.379 m): the larger margins close gaps between obstacles. A tight bound plus delay compensation is the better trade here.
+- **Permanent robot failure:** when robot 4 stops at 5 s, 84% of runs still reach the formation with the other robots placed around it (0.223 m). Nothing in the stack reassigns the lost robot's slot.
 
 ---
 
@@ -72,7 +69,7 @@ All 8 known code gaps identified in the architectural review have been closed:
 | Code Review Gap | Initial Prototype State | Final Engineered Solution | Milestone |
 | :--- | :--- | :--- | :---: |
 | **1. Global Coordinate Leakage** | All robots broadcasted global $(x, y)$ world coordinates; no range limits. | Implemented `neighbor_sensor_node`: strictly relative polar range and bearing within $R_{\text{sense}} = 6.0\,\text{m}$. No controller reads global $(x, y)$. | **M1** |
-| **2. Controller Diversity** | Only displacement-based consensus was available. | Unified `FormationController` interface supporting three distinct families: Displacement (Ren & Beard 2008), Distance-based rigidity (Oh & Ahn 2014), and Bearing-based projection (Zhao & Zelazo 2016). | **M4** |
+| **2. Controller Diversity** | Only displacement-based consensus was available. | Common `SwarmControllerBase` interface with three families: displacement consensus (Ren & Beard 2008), distance gradient with signed-area constraints (Krick et al. 2009; Anderson et al. 2017; no common heading needed), and bearing-only control with a scale term (Zhao & Zelazo 2016). All three converge from the Gazebo spawn and in the deployed arena stack (README 4.4). | **M4** |
 | **3. Embedded Network Faults** | Packet loss and delay were hard-coded inside the robot controller loop. | Standalone `network_impairment_node` with dynamic runtime link toggling service (`ToggleLink.srv`) and stochastic latency queues. | **M2** |
 | **4. Hard-Coded Noise & Dropouts** | Robot 4 blackout ($t \in [5, 10]\,\text{s}$) and noise were hard-coded in node logic. | Standalone `fault_injector_node` driven by external YAML profiles and interactive ROS 2 service (`TriggerFault.srv`). | **M3** |
 | **5. Missing Localization Law** | Robots relied on Gazebo ground truth positions for feedback. | Standalone `localization_node` executing a Cooperative Extended Kalman Filter fusing wheel odometry and relative neighbor bearings. Ground truth isolated for evaluation only. | **M5** |
@@ -99,6 +96,15 @@ Every milestone followed the strict sequential protocol: Independent Audit $\to$
 | **M8** | Statistical Campaign & Ablations | Large-Scale Simulation & Statistics Specialist | PASS | `4cb69ab` | 1 | **PASS** |
 | **M9** | Documentation, Docker & Reproduction | System Documentation & Release Specialist | PASS | `058cd12` | 1 | **PASS** |
 | **M10**| Hardware-in-the-Loop Preparation Plan | Embedded Systems & Deployment Specialist | PASS | `4e909e6` | 1 | **PASS** |
+
+**Re-verification (2026-11-07).** The audit of 2026-11-07 found that the table above
+overstated M4, M5 and M9 (see the errata in their reports). After the fixes:
+
+| Milestone | Status | Evidence |
+| :---: | :---: | :--- |
+| **M4** | 🟢 complete | Distance (+ signed area) and bearing-only laws implemented as published; all three converge from the Gazebo spawn and 100/100 random starts; deployed arena stack: 25/25, 23/25, 25/25 (clean) and 25/25, 23/25, 24/25 (impaired) converged, 150/150 collision-free (README 4.4) |
+| **M5** | 🟢 complete | Wheel odometry reaches the EKF; peers weighted by shared covariance (NEES ~2 vs >10); landmark-free mode measured (absolute drift 0.8 m, formation still converges) (README 6.3) |
+| **M9** | 🟢 complete | Dockerfile packages exist; `reproduce_all.sh` runs end-to-end with timeouts and verifies results against the README; behavioural acceptance tests; 10 repeated Gazebo runs (README 6.1) |
 
 ---
 

@@ -3,8 +3,8 @@
 <package format="3">
   <name>swarm_formation</name>
   <version>0.0.1</version>
-  <description>Decentralized robot shape formation with resilient consensus and APF safety barrier in Gazebo Harmonic</description>
-  <maintainer email="kali@todo.todo">kali</maintainer>
+  <description>Decentralized multi-robot formation control with relative sensing, cooperative EKF localization, map-based navigation and a CBF-QP safety filter in Gazebo Harmonic</description>
+  <maintainer email="mansoorahmedrind515@gmail.com">Mansoor Ahmed Rind</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>

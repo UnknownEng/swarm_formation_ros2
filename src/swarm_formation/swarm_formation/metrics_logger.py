@@ -25,6 +25,8 @@ from rclpy.node import Node
 from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker, MarkerArray
 
+from .formation_metrics import compute_procrustes_error
+
 
 class SwarmMetricsLogger(Node):
     """Monitors, computes, and logs quantitative performance metrics for swarm formation."""
@@ -42,6 +44,8 @@ class SwarmMetricsLogger(Node):
         self.declare_parameter('log_rate', 20.0)
         self.declare_parameter('enable_faults', False)
         self.declare_parameter('use_resilient_method', False)
+        # Distance-only control cannot distinguish a formation from its mirror image
+        self.declare_parameter('allow_reflection', False)
 
         self.total_robots = int(self.get_parameter('total_robots').value)
         self.radius = float(self.get_parameter('formation_radius').value)
@@ -52,6 +56,7 @@ class SwarmMetricsLogger(Node):
         self.log_rate = float(self.get_parameter('log_rate').value)
         self.enable_faults = bool(self.get_parameter('enable_faults').value)
         self.use_resilient_method = bool(self.get_parameter('use_resilient_method').value)
+        self.allow_reflection = bool(self.get_parameter('allow_reflection').value)
         self.dt = 1.0 / self.log_rate
 
         self.robot_poses: Dict[int, Tuple[float, float, float]] = {}
@@ -146,37 +151,10 @@ class SwarmMetricsLogger(Node):
         cy = sum_y / self.total_robots
 
         # 2. Shape Error (Procrustes RMS distance from target polygon vertices)
-        target_pts = [
-            (
-                self.radius * math.cos(2.0 * math.pi * i / self.total_robots),
-                self.radius * math.sin(2.0 * math.pi * i / self.total_robots),
-            )
-            for i in range(self.total_robots)
-        ]
-
-        # Calculate optimal rotation alignment angle (Procrustes)
-        num = sum(
-            (self.robot_poses[i + 1][0] - cx) * target_pts[i][1]
-            - (self.robot_poses[i + 1][1] - cy) * target_pts[i][0]
-            for i in range(self.total_robots)
+        shape_error = compute_procrustes_error(
+            [self.robot_poses[i][:2] for i in range(1, self.total_robots + 1)],
+            self.radius, self.total_robots, allow_reflection=self.allow_reflection,
         )
-        den = sum(
-            (self.robot_poses[i + 1][0] - cx) * target_pts[i][0]
-            + (self.robot_poses[i + 1][1] - cy) * target_pts[i][1]
-            for i in range(self.total_robots)
-        )
-        theta_align = math.atan2(num, den)
-
-        sq_err_sum = 0.0
-        for i in range(self.total_robots):
-            u = self.robot_poses[i + 1][0] - cx
-            v = self.robot_poses[i + 1][1] - cy
-            rot_u = u * math.cos(theta_align) - v * math.sin(theta_align)
-            rot_v = u * math.sin(theta_align) + v * math.cos(theta_align)
-            tx, ty = target_pts[i]
-            sq_err_sum += (rot_u - tx) ** 2 + (rot_v - ty) ** 2
-
-        shape_error = math.sqrt(sq_err_sum / self.total_robots)
 
         # 3. Minimum Inter-Robot Distance and Collision Check
         min_dist = float('inf')

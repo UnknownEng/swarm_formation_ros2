@@ -45,6 +45,7 @@ class RosbagProcessor:
         convergence_threshold: float = 0.25,
         settle_duration: float = 2.0,
         collision_threshold: float = 0.50,
+        allow_reflection: bool = False,
     ) -> None:
         """Initialize processor configuration and internal data structures."""
         self.bag_path = bag_path
@@ -53,6 +54,7 @@ class RosbagProcessor:
         self.convergence_threshold = convergence_threshold
         self.settle_duration = settle_duration
         self.collision_threshold = collision_threshold
+        self.allow_reflection = allow_reflection
 
         # Raw extracted time series: robot_id -> List of (time_sec, x, y, yaw)
         self.raw_poses: Dict[int, List[Tuple[float, float, float, float]]] = {
@@ -183,9 +185,10 @@ class RosbagProcessor:
         positions: List[Tuple[float, float]],
         radius: float,
         total_robots: int = 5,
+        allow_reflection: bool = False,
     ) -> float:
         """Calculate Procrustes RMS shape error aligned to regular polygon of given radius."""
-        return compute_procrustes_error(positions, radius, total_robots)
+        return compute_procrustes_error(positions, radius, total_robots, allow_reflection)
 
     def compute_metrics(self, dt: float = 0.05) -> Dict[str, Any]:
         """Resample time-series data at regular intervals dt and compute all swarm metrics."""
@@ -272,7 +275,9 @@ class RosbagProcessor:
 
         for k in range(num_steps):
             pts = [(interp_x[i][k], interp_y[i][k]) for i in range(1, self.total_robots + 1)]
-            se = self.compute_procrustes_error(pts, self.radius, self.total_robots)
+            se = self.compute_procrustes_error(
+                pts, self.radius, self.total_robots, self.allow_reflection
+            )
             shape_errors[k] = se
 
             # Inter-robot distances
@@ -495,6 +500,11 @@ def main() -> None:
         help='Convergence threshold in meters (default: 0.25).',
     )
     parser.add_argument(
+        '--allow-reflection',
+        action='store_true',
+        help='Count the mirrored polygon as correct (use for the distance controller).',
+    )
+    parser.add_argument(
         '--dt',
         type=float,
         default=0.05,
@@ -508,6 +518,7 @@ def main() -> None:
         total_robots=args.total_robots,
         formation_radius=args.radius,
         convergence_threshold=args.threshold,
+        allow_reflection=args.allow_reflection,
     )
 
     print(f'Reading bag: {args.bag_path}...')

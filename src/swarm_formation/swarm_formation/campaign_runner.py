@@ -19,6 +19,7 @@ import csv
 from dataclasses import asdict
 import json
 import math
+import multiprocessing
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -74,7 +75,7 @@ def compute_statistics(values: List[float], alpha: float = 0.05) -> Dict[str, fl
     }
 
 
-# Channel impairment used by the launch file when enable_faults:=true
+# Channel impairment used by the launch file when enable_faults:=true, plus sensor noise
 NOMINAL_IMPAIRMENT = {
     'drop_rate': 0.15,
     'delay_sec': 0.08,
@@ -83,58 +84,74 @@ NOMINAL_IMPAIRMENT = {
     'bearing_noise_std': 0.02,
 }
 
-FULL_STACK = {
-    'use_huber': True,
-    'use_ema': True,
-    'use_heartbeat': True,
+# The stack as deployed by config/swarm_params.yaml (ROS defaults), in the arena of
+# collapsed_building.sdf. Huber/EMA/heartbeat are off there (use_resilient_method: false).
+DEPLOYED = {
     'use_cbf': True,
+    'use_world_obstacles': True,
+    'use_navigation': True,
+    'anchor_gain': 0.4,
+    'twist_mapper': 'calm',
+    'delay_compensation': True,
+    'cbf_delay_bound_sec': 0.05,   # delay_bound_sec in swarm_params.yaml
 }
+
+RESILIENCE = {'use_huber': True, 'use_ema': True, 'use_heartbeat': True}
 
 
 def define_campaign_conditions(duration_sec: float = 30.0) -> Dict[str, CampaignRunConfig]:
     """
-    Define the experimental matrix.
+    Define the experimental matrix around the deployed stack.
 
-    * Safety comparison (clean channel): unshielded, APF, CBF-QP, full stack.
-    * Leave-one-out ablation under the nominal impairment of the launch file
-      (15% drop, 80 ms delay, +/-40 ms jitter, sensor noise): full stack, the full
-      stack minus each resilience component, and CBF without any resilience component.
-    * Sweeps on the full stack: packet drop, and *applied* latency with a CBF margin
-      matched to the latency, plus one 200 ms run with the ROS default 50 ms margin.
+    Every condition is the deployed stack in the arena (obstacles, walls, navigation,
+    anchor, calm twist mapper, delay compensation, 50 ms CBF delay bound) except for the
+    one aspect it varies:
+
+    * safety comparison (clean channel): no avoidance, APF instead of CBF, deployed;
+    * deployed stack under the launch file's fault settings, and leave-one-out
+      ablations under those settings (each removes one deployed component, plus one that
+      adds the old Huber/EMA/heartbeat resilience layer);
+    * packet-drop sweep, applied-latency sweep (at the deployed 50 ms bound and with a
+      matched bound), and a permanent robot dropout.
     """
     def cfg(**kw: Any) -> CampaignRunConfig:
-        return CampaignRunConfig(duration_sec=duration_sec, **kw)
+        params = dict(DEPLOYED)
+        params.update(kw)
+        return CampaignRunConfig(duration_sec=duration_sec, **params)
 
     conditions: Dict[str, CampaignRunConfig] = {}
 
-    # 1. Safety comparison on a clean channel
-    conditions['baseline_unshielded'] = cfg()
-    conditions['apf_only'] = cfg(use_apf=True)
-    conditions['cbf_qp_only'] = cfg(use_cbf=True)
-    conditions['full_resilient_cbf'] = cfg(**FULL_STACK)
+    # 1. Safety comparison in the arena, clean channel
+    conditions['arena_unshielded'] = cfg(use_cbf=False)
+    conditions['arena_apf'] = cfg(use_cbf=False, use_apf=True)
+    conditions['deployed_clean'] = cfg()
 
-    # 2. Leave-one-out ablation under nominal impairment
-    conditions['impaired_full_resilient_cbf'] = cfg(**FULL_STACK, **NOMINAL_IMPAIRMENT)
-    for comp in ('huber', 'ema', 'heartbeat'):
-        flags = dict(FULL_STACK)
-        flags[f'use_{comp}'] = False
-        conditions[f'impaired_no_{comp}'] = cfg(**flags, **NOMINAL_IMPAIRMENT)
-    conditions['impaired_cbf_only'] = cfg(use_cbf=True, **NOMINAL_IMPAIRMENT)
+    # 2. Deployed stack under the launch fault settings, and leave-one-out ablations
+    conditions['deployed_impaired'] = cfg(**NOMINAL_IMPAIRMENT)
+    conditions['impaired_no_navigation'] = cfg(use_navigation=False, **NOMINAL_IMPAIRMENT)
+    conditions['impaired_no_anchor'] = cfg(anchor_gain=0.0, **NOMINAL_IMPAIRMENT)
+    conditions['impaired_no_delay_comp'] = cfg(delay_compensation=False, **NOMINAL_IMPAIRMENT)
+    conditions['impaired_legacy_mapper'] = cfg(twist_mapper='legacy', **NOMINAL_IMPAIRMENT)
+    conditions['impaired_with_resilience'] = cfg(**RESILIENCE, **NOMINAL_IMPAIRMENT)
 
-    # 3. Packet drop sweep (full stack, no delay)
+    # 3. Packet drop sweep (no delay)
     for drop in [0.15, 0.30, 0.50]:
-        conditions[f'sweep_drop_{int(round(drop * 100))}pct'] = cfg(**FULL_STACK, drop_rate=drop)
+        conditions[f'sweep_drop_{int(round(drop * 100))}pct'] = cfg(drop_rate=drop)
 
-    # 4. Latency sweep: delay is actually applied to every peer measurement
+    # 4. Applied latency sweep at the deployed 50 ms CBF bound, plus a matched bound
     for delay_ms in [50, 100, 200]:
-        conditions[f'sweep_delay_{delay_ms}ms'] = cfg(
-            **FULL_STACK, delay_sec=delay_ms / 1000.0
-        )
-    conditions['sweep_delay_200ms_fixed_margin'] = cfg(
-        **FULL_STACK, delay_sec=0.200, cbf_delay_bound_sec=0.05
-    )
+        conditions[f'sweep_delay_{delay_ms}ms'] = cfg(delay_sec=delay_ms / 1000.0)
+    conditions['sweep_delay_200ms_matched'] = cfg(delay_sec=0.200, cbf_delay_bound_sec=0.200)
+
+    # 5. Robot 4 stops for good at t = 5 s (motor failure); others keep forming
+    conditions['robot4_dropout'] = cfg(dropout_robot_id=4, dropout_start_sec=5.0)
 
     return conditions
+
+
+def _run_one(job: Tuple[str, CampaignRunConfig, int]) -> Tuple[str, int, Dict[str, Any]]:
+    name, config, seed = job
+    return name, seed, run_single_simulation(config, seed)
 
 
 def run_campaign(
@@ -142,11 +159,13 @@ def run_campaign(
     duration_sec: float = 30.0,
     output_dir: str = 'results/M8',
     condition_names: Optional[List[str]] = None,
+    workers: int = 1,
 ) -> Tuple[Dict[str, Any], str, str]:
     """
     Execute the campaign across all seeds and return aggregated summaries.
 
     :param condition_names: Optional subset of condition names to run (default: all).
+    :param workers: Number of worker processes (results are identical for any value).
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
@@ -165,13 +184,20 @@ def run_campaign(
         f'{num_seeds} Seeds/Condition | Total Runs: {len(conditions) * num_seeds}'
     )
 
+    seeds = [s_idx * 1000 + 42 for s_idx in range(1, num_seeds + 1)]
+    jobs = [(name, cfg, seed) for name, cfg in conditions.items() for seed in seeds]
+    results: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    if workers > 1:
+        with multiprocessing.Pool(processes=workers) as pool:
+            for name, seed, res in pool.imap_unordered(_run_one, jobs, chunksize=2):
+                results[(name, seed)] = res
+    else:
+        for job in jobs:
+            name, seed, res = _run_one(job)
+            results[(name, seed)] = res
+
     for cond_name, cfg in conditions.items():
-        print(f'  --> Running condition: {cond_name} ({num_seeds} seeds)...', end='', flush=True)
-        seed_results = []
-        for s in range(1, num_seeds + 1):
-            seed = s * 1000 + 42
-            res = run_single_simulation(cfg, seed)
-            seed_results.append(res)
+        seed_results = [results[(cond_name, seed)] for seed in seeds]
 
         # Aggregate metrics
         def col(key: str) -> List[float]:
@@ -190,6 +216,9 @@ def run_campaign(
         }
         safe_rate = 100.0 * float(np.mean([r['empirically_collision_free'] for r in seed_results]))
         conv_rate = 100.0 * float(np.mean([r['is_converged'] for r in seed_results]))
+        obs_safe_rate = 100.0 * float(np.mean([
+            r.get('obstacle_collision_free', True) for r in seed_results
+        ]))
 
         cond_summary = {
             'condition': cond_name,
@@ -214,6 +243,12 @@ def run_campaign(
             'packet_drop_fraction': float(np.mean(col('packet_drop_fraction'))),
             'applied_latency_ms': 1000.0 * float(np.mean(col('mean_applied_latency_sec'))),
             'cbf_delay_bound_ms': 1000.0 * cfg.effective_cbf_delay_bound() if cfg.use_cbf else 0.0,
+            'obstacle_collision_free_rate_pct': obs_safe_rate,
+            'min_obstacle_clearance_worst': float(min(
+                r.get('min_obstacle_clearance', float('inf')) for r in seed_results
+            )),
+            'settled_turn_rate_mean': float(np.mean(col('late_mean_abs_w'))),
+            'settled_speed_mean': float(np.mean(col('late_mean_abs_v'))),
         }
         summary_table_rows.append(cond_summary)
 
@@ -224,8 +259,9 @@ def run_campaign(
         }
 
         print(
-            f' Done. Converged: {conv_rate:.0f}% | Shape Err: {stats_shape["mean"]:.3f}m | '
-            f'Min Dist: {stats_min_dist["mean"]:.3f}m | Collision-free: {safe_rate:.0f}%'
+            f'  {cond_name:28s} converged {conv_rate:3.0f}% | shape {stats_shape["mean"]:.3f} m | '
+            f'min dist {stats_min_dist["mean"]:.3f} m | robot-safe {safe_rate:3.0f}% | '
+            f'obstacle-safe {obs_safe_rate:3.0f}%', flush=True
         )
 
     # Export CSV summary
@@ -258,6 +294,9 @@ def main() -> None:
     parser.add_argument(
         '--output-dir', type=str, default='results/M8', help='Directory for output data.'
     )
+    parser.add_argument(
+        '--workers', type=int, default=1, help='Worker processes (default: 1).'
+    )
 
     args = parser.parse_args()
 
@@ -265,6 +304,7 @@ def main() -> None:
         num_seeds=args.seeds,
         duration_sec=args.duration,
         output_dir=args.output_dir,
+        workers=args.workers,
     )
 
     print('\nCampaign completed successfully.')

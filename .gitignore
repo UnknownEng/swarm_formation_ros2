@@ -8,3 +8,4 @@ __pycache__/
 *.mcap
 runs/
 .vscode/
+.idea/

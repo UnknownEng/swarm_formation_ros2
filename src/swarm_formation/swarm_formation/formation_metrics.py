@@ -22,18 +22,29 @@ def compute_procrustes_error(
     positions: List[Tuple[float, float]],
     radius: float,
     total_robots: int = 5,
+    allow_reflection: bool = False,
 ) -> float:
     """
     Calculate Procrustes RMS shape error aligned to a regular polygon of given radius.
 
     Translation and rotation are factored out; the robot-to-vertex assignment is fixed
-    (robot i must occupy vertex i).
-
-    :param positions: Ground-truth (x, y) positions ordered by robot id.
-    :param radius: Circumscribed radius of the target polygon in meters.
-    :param total_robots: Number of robots in the formation.
-    :return: RMS position error in meters, or NaN if positions are missing.
+    (robot i must occupy vertex i). With ``allow_reflection`` the mirrored polygon also
+    counts as correct (the right metric for distance-only control, which cannot tell a
+    formation from its mirror image).
     """
+    err = _procrustes_rotation_only(positions, radius, total_robots)
+    if allow_reflection and len(positions) >= total_robots:
+        mirrored = [(x, -y) for x, y in positions[:total_robots]]
+        err = min(err, _procrustes_rotation_only(mirrored, radius, total_robots))
+    return err
+
+
+def _procrustes_rotation_only(
+    positions: List[Tuple[float, float]],
+    radius: float,
+    total_robots: int,
+) -> float:
+    """Return the RMS error after optimal translation and rotation (no reflection)."""
     if len(positions) < total_robots:
         return float('nan')
 

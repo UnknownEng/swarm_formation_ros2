@@ -1,0 +1,20 @@
+{
+  "bag_path": "/home/kali/swarm_ws/results/reproduction/gazebo_bag",
+  "total_robots": 5,
+  "formation_radius": 2.0,
+  "convergence_threshold": 0.25,
+  "settle_duration": 2.0,
+  "collision_threshold": 0.5,
+  "total_duration_sec": 40.18,
+  "final_shape_error_rms": 0.0769902690971351,
+  "min_shape_error_rms": 0.06548585001039123,
+  "global_min_distance": 1.0745063605025091,
+  "total_collisions": 0,
+  "is_converged": true,
+  "convergence_time_sec": 7.845099502487562,
+  "mean_est_error": 0.010502885304775117,
+  "max_est_error": 0.05387923536121449,
+  "empirically_collision_free": true,
+  "total_control_energy": 338.903881385893,
+  "total_safety_interventions": 1382.1690811840817
+}

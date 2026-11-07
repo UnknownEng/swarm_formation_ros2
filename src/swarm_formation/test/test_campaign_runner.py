@@ -45,43 +45,48 @@ def test_compute_statistics_known_values():
 
 
 def test_define_campaign_conditions_matrix():
-    """Verify the safety comparison, leave-one-out ablation, and both sweeps are defined."""
+    """The matrix is built around the deployed stack, with one change per condition."""
+    from swarm_formation.campaign_runner import DEPLOYED, NOMINAL_IMPAIRMENT
+
     conditions = define_campaign_conditions(duration_sec=20.0)
     required = [
-        'baseline_unshielded',
-        'apf_only',
-        'cbf_qp_only',
-        'full_resilient_cbf',
-        'impaired_full_resilient_cbf',
-        'impaired_no_huber',
-        'impaired_no_ema',
-        'impaired_no_heartbeat',
-        'impaired_cbf_only',
-        'sweep_drop_15pct',
-        'sweep_drop_30pct',
-        'sweep_drop_50pct',
-        'sweep_delay_50ms',
-        'sweep_delay_100ms',
-        'sweep_delay_200ms',
-        'sweep_delay_200ms_fixed_margin',
+        'arena_unshielded', 'arena_apf', 'deployed_clean', 'deployed_impaired',
+        'impaired_no_navigation', 'impaired_no_anchor', 'impaired_no_delay_comp',
+        'impaired_legacy_mapper', 'impaired_with_resilience',
+        'sweep_drop_15pct', 'sweep_drop_30pct', 'sweep_drop_50pct',
+        'sweep_delay_50ms', 'sweep_delay_100ms', 'sweep_delay_200ms',
+        'sweep_delay_200ms_matched', 'robot4_dropout',
     ]
     for req in required:
         assert req in conditions, f'Condition {req} missing from campaign matrix'
 
-    # Leave-one-out: each ablation differs from the full stack in exactly one component
-    full = conditions['impaired_full_resilient_cbf']
-    for comp in ('huber', 'ema', 'heartbeat'):
-        abl = conditions[f'impaired_no_{comp}']
-        assert getattr(abl, f'use_{comp}') is False
-        for other in ('huber', 'ema', 'heartbeat', 'cbf'):
-            if other != comp:
-                assert getattr(abl, f'use_{other}') == getattr(full, f'use_{other}')
-        assert abl.drop_rate == full.drop_rate and abl.delay_sec == full.delay_sec
+    # Every condition runs in the arena with the deployed defaults unless it varies them
+    deployed = conditions['deployed_clean']
+    for key, value in DEPLOYED.items():
+        assert getattr(deployed, key) == value, key
+    for cfg in conditions.values():
+        assert cfg.use_world_obstacles
 
-    # Latency sweep must apply delay, not only widen the CBF margin
+    # Leave-one-out: each ablation differs from deployed_impaired in exactly one setting
+    base = conditions['deployed_impaired']
+    for key, value in NOMINAL_IMPAIRMENT.items():
+        assert getattr(base, key) == value
+    ablations = {
+        'impaired_no_navigation': {'use_navigation'},
+        'impaired_no_anchor': {'anchor_gain'},
+        'impaired_no_delay_comp': {'delay_compensation'},
+        'impaired_legacy_mapper': {'twist_mapper'},
+        'impaired_with_resilience': {'use_huber', 'use_ema', 'use_heartbeat'},
+    }
+    for name, changed in ablations.items():
+        diff = {k for k, v in vars(conditions[name]).items() if vars(base)[k] != v}
+        assert diff == changed, (name, diff)
+
+    # The latency sweep applies delay; the deployed bound stays 50 ms unless matched
     assert conditions['sweep_delay_200ms'].delay_sec == pytest.approx(0.2)
-    assert conditions['sweep_delay_200ms_fixed_margin'].effective_cbf_delay_bound() == (
-        pytest.approx(0.05)
+    assert conditions['sweep_delay_200ms'].effective_cbf_delay_bound() == pytest.approx(0.05)
+    assert conditions['sweep_delay_200ms_matched'].effective_cbf_delay_bound() == (
+        pytest.approx(0.2)
     )
 
 
@@ -152,7 +157,7 @@ def test_mini_campaign_and_visualization_pipeline():
 
         with open(json_path, 'r', encoding='utf-8') as f:
             loaded = json.load(f)
-            assert len(loaded['baseline_unshielded']['seed_results']) == 2
+            assert len(loaded['arena_unshielded']['seed_results']) == 2
             assert loaded['sweep_delay_200ms']['summary']['applied_latency_ms'] == (
                 pytest.approx(200.0)
             )

@@ -211,6 +211,7 @@ def compute_anchor_force(
     est_pos: Tuple[float, float],
     gain: float,
     saturation: float = 1.0,
+    rotation: float = 0.0,
 ) -> Tuple[float, float]:
     """
     Weak virtual-leader term pulling a robot toward its slot around a fixed centre.
@@ -228,11 +229,14 @@ def compute_anchor_force(
     :param est_pos: Robot's estimated world position (x, y).
     :param gain: Anchor gain (0 disables the term).
     :param saturation: Error norm above which the pull is capped, in meters.
+    :param rotation: Orientation of the slot pattern (rad). 0 for controllers that fix the
+        orientation; for distance control, which leaves it free, the current best-fit
+        orientation, so that the anchor fixes only the formation's position.
     :return: Planar force (fx, fy).
     """
     if gain <= 0.0:
         return 0.0, 0.0
-    angle = 2.0 * math.pi * ((robot_id - 1) % total_robots) / total_robots
+    angle = 2.0 * math.pi * ((robot_id - 1) % total_robots) / total_robots + rotation
     ex = center[0] + radius * math.cos(angle) - est_pos[0]
     ey = center[1] + radius * math.sin(angle) - est_pos[1]
     norm = math.hypot(ex, ey)

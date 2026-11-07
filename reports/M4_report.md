@@ -8,6 +8,33 @@
 
 ---
 
+> **Erratum (2026-11-07).** All Gazebo results below were measured before 2026-11-07 with two defects that invalidate them: wheel odometry never reached the EKF (bridge type `gz.msgs.OdometryWithCovariance` vs the DiffDrive plugin's `gz.msgs.Odometry`; `/robot_i/odom` carried 0 messages, and the EKF fallback dead-reckoned with the first commanded velocity), and all nodes ran on the wall clock while Gazebo ran at about 5% of real time. Current Gazebo results are in README Section 6.1/6.2.
+>
+> The three "controller families" are less distinct than stated: the distance controller adds the displacement-consensus term as "orientation guidance" (without it, `gazebo_distance_baseline.csv` ended at 2.82 m), and the bearing controller reduces to displacement consensus with different gains along and across the desired bearing; it also uses range. There is no stress matrix in the code. Only the displacement controller has been validated with the current stack.
+
+> **Resolved (2026-11-07) - status: 🟢 complete.** The three families are now the laws
+> their references describe (`controllers.py`, README Section 4):
+> - **Distance**: gradient law of Krick et al. (2009) plus signed-area terms (Anderson et
+>   al. 2017); no displacement term, invariant to rotations of the measurement frame (no
+>   common heading needed; `test_distance_controller_is_rotation_invariant`). The pure law
+>   (`area_gain=0`) stalls at 2.68 m from the Gazebo spawn and reaches the exact pentagon
+>   from 20/100 random starts; with the area terms, 100/100 and the spawn converge.
+> - **Bearing**: bearing-only law of Zhao & Zelazo (2016), -d* P(g) g*, plus a weak range
+>   term for the scale (bearing-only control keeps the initial scale).
+> - Navigation target and anchor follow the distance controller's free orientation
+>   (best-fit rotation of the template to the measured neighbours).
+>
+> Validation, deployed arena stack (CBF, navigation, anchor, delay compensation), campaign
+> simulator, 25 seeds per cell, clean / launch fault settings: displacement 25/25 and
+> 25/25 converged; distance 23/25 and 23/25; bearing 25/25 and 24/25; **all 150 runs
+> collision-free**. The distance failures are safe deadlocks (two robots that must swap
+> sides of a rubble block through a narrow gap). Tests: `test_m4_acceptance.py` (Gazebo
+> spawn and 30 random starts per family, pure-law limitation, rotation invariance, one
+> deployed-stack run per family under impairments). The non-displacement families have
+> not been run in Gazebo.
+
+---
+
 ## 1. Scope: Required vs. Delivered
 
 | Capability Required | Delivered Status | Verification Evidence |

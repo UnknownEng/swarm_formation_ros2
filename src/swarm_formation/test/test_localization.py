@@ -16,6 +16,7 @@
 
 import math
 
+import pytest
 from swarm_formation.localization import compute_estimation_error, RobotEKF
 
 
@@ -176,3 +177,63 @@ def test_ekf_bounded_drift_with_landmarks() -> None:
     )
     # Bounded error due to landmark corrections
     assert pos_err < 0.25, f'Estimation error {pos_err}m exceeded bound 0.25m'
+
+
+def _peer_update(target_cov, seed: int = 0, trials: int = 2000):
+    """Monte Carlo NEES of one peer range/bearing update; return (mean NEES, mean |dx|)."""
+    import random
+    rng = random.Random(seed)
+    p0 = 0.01                      # own prior position variance (m^2)
+    sigma = 0.25                   # peer estimate position variance (m^2)
+    r_rng, r_brg = 0.0025, 0.0004  # measurement noise
+    nees = 0.0
+    shift = 0.0
+    for _ in range(trials):
+        ekf = RobotEKF(
+            init_x=rng.gauss(0.0, math.sqrt(p0)),
+            init_y=rng.gauss(0.0, math.sqrt(p0)),
+            init_yaw=0.0,
+        )
+        ekf.P = [[p0, 0.0, 0.0], [0.0, p0, 0.0], [0.0, 0.0, 1e-6]]
+        x0 = ekf.x
+        peer_x = 2.0 + rng.gauss(0.0, math.sqrt(sigma))
+        peer_y = rng.gauss(0.0, math.sqrt(sigma))
+        dist = 2.0 + rng.gauss(0.0, math.sqrt(r_rng))
+        brg = rng.gauss(0.0, math.sqrt(r_brg))
+        ekf.update_range_bearing(
+            peer_x, peer_y, dist, brg, var_range=r_rng, var_bearing=r_brg,
+            target_cov=target_cov(sigma),
+        )
+        ex, ey = ekf.x, ekf.y
+        a, b, d = ekf.P[0][0], ekf.P[0][1], ekf.P[1][1]
+        det = a * d - b * b
+        nees += (d * ex * ex - 2 * b * ex * ey + a * ey * ey) / det
+        shift += abs(ekf.x - x0)
+    return nees / trials, shift / trials
+
+
+def test_peer_covariance_zero_matches_exact_target() -> None:
+    """A zero target covariance gives exactly the old (exact-beacon) update."""
+    a = RobotEKF(init_x=0.1, init_y=-0.2, init_yaw=0.05)
+    b = RobotEKF(init_x=0.1, init_y=-0.2, init_yaw=0.05)
+    a.update_range_bearing(2.0, 1.0, 2.3, 0.4, 0.01, 0.002)
+    b.update_range_bearing(2.0, 1.0, 2.3, 0.4, 0.01, 0.002,
+                           target_cov=[[0.0, 0.0], [0.0, 0.0]])
+    assert a.get_pose() == pytest.approx(b.get_pose())
+    flat_a = [v for row in a.get_covariance() for v in row]
+    flat_b = [v for row in b.get_covariance() for v in row]
+    assert flat_a == pytest.approx(flat_b)
+
+
+def test_peer_covariance_keeps_filter_consistent() -> None:
+    """
+    An uncertain peer treated as exact makes the EKF overconfident (NEES >> 2).
+
+    Propagating the peer covariance restores consistency (2-DoF NEES close to 2) and
+    stops the uncertain peer from dragging the estimate.
+    """
+    nees_exact, shift_exact = _peer_update(lambda s: None)
+    nees_cov, shift_cov = _peer_update(lambda s: [[s, 0.0], [0.0, s]])
+    assert nees_exact > 10.0
+    assert 1.6 < nees_cov < 2.6
+    assert shift_cov < 0.5 * shift_exact

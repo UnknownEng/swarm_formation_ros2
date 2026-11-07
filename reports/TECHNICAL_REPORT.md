@@ -23,40 +23,37 @@
 >
 > **Still not validated:** none of the fixes has been run in Gazebo yet. Every Gazebo run committed before this erratum that used the safety layer ended without reaching the formation.
 
-### Current M8 results (400 runs, 25 seeds × 16 conditions)
+### Current M8 results (425 runs, 25 seeds × 17 conditions, deployed stack)
 
-| Condition | Reached formation | Final shape error (m), mean [95% CI] | Min distance (m), mean / worst | Collision-free | Path length (m) | Est. error (m) |
+| Condition | Reached formation | Final shape error (m), mean [95% CI] | Robot-robot: collision-free / worst distance | Robot-obstacle: collision-free | Settled turn rate | Path length (m) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Unshielded consensus (clean) | 100% | 0.009 [0.007, 0.011] | 0.140 / 0.071 | 0% | 22.0 | 0.004 |
-| APF only (clean) | 100% | 0.009 [0.007, 0.011] | 0.867 / 0.829 | 100% | 23.4 | 0.004 |
-| CBF-QP only (clean) | 100% | 0.009 [0.007, 0.011] | 0.955 / 0.797 | 100% | 23.6 | 0.005 |
-| Full stack (clean) | 100% | 0.009 [0.007, 0.011] | 0.766 / 0.664 | 100% | 26.8 | 0.004 |
-| Full stack, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
-| Full stack without Huber, impaired | 100% | 0.193 [0.178, 0.209] | 1.065 / 0.934 | 100% | 74.2 | 0.046 |
-| Full stack without EMA, impaired | 100% | 0.104 [0.094, 0.114] | 1.081 / 0.937 | 100% | 49.0 | 0.025 |
-| Full stack without heartbeat, impaired | 100% | 0.202 [0.185, 0.218] | 1.086 / 1.023 | 100% | 74.8 | 0.029 |
-| CBF only (no resilience), impaired | 100% | 0.108 [0.099, 0.116] | 1.064 / 0.966 | 100% | 48.5 | 0.026 |
-| Full stack, 15% drop | 100% | 0.010 [0.008, 0.012] | 0.767 / 0.691 | 100% | 27.0 | 0.004 |
-| Full stack, 30% drop | 100% | 0.010 [0.009, 0.012] | 0.759 / 0.648 | 100% | 27.7 | 0.005 |
-| Full stack, 50% drop | 100% | 0.011 [0.009, 0.013] | 0.731 / 0.576 | 100% | 30.5 | 0.005 |
-| Full stack, 50 ms delay (matched margin) | 100% | 0.067 [0.056, 0.078] | 0.883 / 0.810 | 100% | 43.5 | 0.014 |
-| Full stack, 100 ms delay (matched margin) | 100% | 0.152 [0.133, 0.171] | 1.013 / 0.865 | 100% | 65.8 | 0.029 |
-| Full stack, 200 ms delay (matched margin) | 36% | 0.309 [0.289, 0.329] | 1.272 / 1.172 | 100% | 89.9 | 0.054 |
-| Full stack, 200 ms delay (fixed 50 ms margin) | 4% | 0.352 [0.329, 0.374] | 0.825 / 0.711 | 100% | 99.0 | 0.070 |
+| No avoidance (clean) | 100% | 0.042 [0.037, 0.047] | 0% / 0.15 m | 76% | 0.00 rad/s | 22.9 |
+| APF instead of CBF (clean) | 100% | 0.044 [0.038, 0.049] | 0% / 0.06 m | 80% | 0.00 rad/s | 22.6 |
+| **Deployed stack (clean)** | 100% | 0.047 [0.044, 0.050] | 100% / 0.91 m | 100% | 0.00 rad/s | 23.4 |
+| **Deployed stack, impaired** | 100% | 0.035 [0.029, 0.042] | 100% / 0.76 m | 100% | 0.23 rad/s | 26.1 |
+|   without navigation, impaired | 80% | 0.220 [0.066, 0.373] | 100% / 0.64 m | 100% | 0.48 rad/s | 26.9 |
+|   without anchor, impaired | 100% | 0.035 [0.030, 0.040] | 100% / 0.86 m | 100% | 0.25 rad/s | 25.5 |
+|   without delay compensation, impaired | 100% | 0.049 [0.038, 0.060] | 100% / 0.81 m | 100% | 0.54 rad/s | 32.2 |
+|   legacy twist mapper, impaired | 100% | 0.071 [0.061, 0.081] | 100% / 0.84 m | 100% | 2.63 rad/s | 38.5 |
+|   + Huber/EMA/heartbeat, impaired | 100% | 0.035 [0.030, 0.040] | 100% / 0.80 m | 100% | 0.03 rad/s | 26.3 |
+| 15% packet drop | 100% | 0.047 [0.044, 0.049] | 100% / 0.91 m | 100% | 0.00 rad/s | 23.2 |
+| 30% packet drop | 100% | 0.048 [0.045, 0.052] | 100% / 0.83 m | 100% | 0.00 rad/s | 23.1 |
+| 50% packet drop | 100% | 0.045 [0.042, 0.049] | 100% / 0.84 m | 100% | 0.01 rad/s | 23.2 |
+| 50 ms delay | 100% | 0.048 [0.045, 0.050] | 100% / 0.88 m | 100% | 0.00 rad/s | 22.7 |
+| 100 ms delay | 100% | 0.044 [0.040, 0.047] | 100% / 0.75 m | 100% | 0.00 rad/s | 23.3 |
+| 200 ms delay | 100% | 0.135 [0.120, 0.150] | 100% / 0.75 m | 100% | 1.88 rad/s | 38.6 |
+| 200 ms delay, CBF bound matched to 200 ms | 44% | 0.379 [0.256, 0.501] | 100% / 1.12 m | 100% | 1.69 rad/s | 53.3 |
+| Robot 4 stops for good at 5 s | 84% | 0.223 [0.209, 0.237] | 100% / 0.85 m | 100% | 0.24 rad/s | 25.4 |
 
-*Results regenerated on 2026-11-07 after the Phase A fixes. Measurements now carry their measurement time, are rotated with the heading at that time, take relative velocity only from distinct measurements, and are dropped once no longer delivered.*
+*Campaign re-run on 2026-11-07 on the deployed stack: every condition runs in the arena (obstacles, walls) with navigation, the anchor, the calm twist mapper, delay compensation and the 50 ms CBF delay bound, unless it varies one of them. "Impaired" = the launch file's fault settings (15% drop, 80 ± 40 ms delay) plus range/bearing noise (0.05 m / 0.02 rad).*
 
 **What the data supports:**
-- **Safety:** every run in all 15 conditions with avoidance stayed above the 0.50 m collision limit. The worst case was 0.576 m (full stack, 50% drop). Without avoidance, every run collided.
-- **Safety no longer costs convergence:** on a clean channel, CBF-only and the full stack reach the formation in 100% of runs (original implementation: 36% and 12%).
-- **No energy advantage:** CBF path length (23.6 m) is about the same as APF (23.4 m). The earlier 47.2% figure is withdrawn.
-- **Packet loss:** the formation forms precisely even at 50% drop (final error 0.011 m).
-- **Delay:** safety holds up to 200 ms, even with the fixed 50 ms margin (worst 0.711 m). Formation accuracy degrades with delay: 0.067 m at 50 ms and 0.152 m at 100 ms. At 200 ms only 36% of runs reach the formation (4% with the fixed margin). The stack works to about 100 ms of delay.
-- **Resilience components, under nominal impairment:**
-  - **EMA hurts.** Removing it halves the final error (0.202 m → 0.104 m) and the path length (74.8 m → 49.0 m), because its lag adds to the network delay.
-  - **Huber is neutral** (0.193 m without it, overlapping CIs).
-  - **The heartbeat now works** (it uses measurement age, and is unit-tested), but it changes nothing here, because no peer is silent for more than 1.2 s in these conditions. A robot-loss scenario is needed to evaluate it.
-  - **CBF with no resilience component** (0.108 m) does as well as any combination.
+- **Safety:** the deployed stack never collided in any of its 375 runs (15 conditions): robots stayed at least 0.64 m apart and never touched an obstacle or wall. Without avoidance every run had a robot-robot collision and 24% hit an obstacle.
+- **APF is not a substitute in the arena.** With navigation, APF collided in every run: navigation replaces the force direction while a route is blocked, which also discards APF's repulsion. Without navigation (checked separately, 4 seeds), APF kept robots apart but hit obstacles in every run, because its campaign implementation only repels other robots. The CBF acts after navigation, so the deployed stack is unaffected.
+- **Accuracy:** the deployed stack converges in every run, clean (0.047 m) and impaired (0.035 m), and is unaffected by packet loss up to 50% and delay up to 100 ms (0.044-0.048 m).
+- **What matters in the ablation:** removing **navigation** hurts most (80% converge, 0.220 m): robots get trapped behind obstacles. The **legacy twist mapper** doubles the error (0.071 m) and spins at 2.63 rad/s once settled (0.23 with the calm mapper). Removing **delay compensation** costs a little (0.049 m, 23% longer paths, more turning). The **anchor** makes no difference here (0.035 m without it); its job is to stop the drift that pinned robots on the wall in Gazebo. Adding the old **Huber/EMA/heartbeat** layer is neutral (0.035 m).
+- **200 ms delay** is where accuracy breaks down (0.135 m, settled turning 1.88 rad/s), though safety holds even with the CBF bound left at 50 ms (worst distance 0.75 m). **Matching the bound to 200 ms makes things worse in the arena** (44% converge, 0.379 m): the larger margins close gaps between obstacles. A tight bound plus delay compensation is the better trade here.
+- **Permanent robot failure:** when robot 4 stops at 5 s, 84% of runs still reach the formation with the other robots placed around it (0.223 m). Nothing in the stack reassigns the lost robot's slot.
 
 ---
 
@@ -64,7 +61,7 @@
 
 We present a decentralized, relative-sensing multi-robot system for geometric shape formation in GPS-denied, obstacle-strewn environments, modeled after an urban collapsed-building scenario. A swarm of $N = 5$ nonholonomic differential-drive mobile robots coordinates to achieve and maintain a regular pentagon formation ($R = 2.0\,\text{m}$) without central leadership, global Cartesian positioning, or shared world coordinates. The architecture decouples into: (i) an onboard relative range-and-bearing sensing layer ($R_{\text{sense}} = 6.0\,\text{m}$), (ii) a cooperative Extended Kalman Filter (EKF) state estimator fusing unicycle odometry and neighbor bearings, (iii) three interchangeable controller families (displacement-based consensus, distance-based rigidity with stress matrices, and bearing-based orthogonal projections), (iv) an independent network impairment and fault injection engine simulating packet drop, stochastic latency, and agent blackout, and (v) an active safety layer formulated as a Control Barrier Function Quadratic Program (CBF-QP) with delay-compensated barrier expansion. 
 
-We evaluate the system in a 400-run kinematic campaign (25 seeds $\times$ 16 conditions) that mirrors the ROS node pipeline, with packet drop, delay and jitter applied to every peer measurement and Student's $t$ 95% confidence intervals. Unshielded consensus collides in every crossing run. A look-ahead CBF-QP with deadlock breaking keeps every run collision-free (worst $d_{\min} = 0.576\,\text{m}$) while still reaching the formation in 100% of clean-channel runs. It gives no energy advantage over APF. Formation accuracy holds at 50% packet loss and to about 100 ms of delay; at 200 ms only 36% of runs reach the formation. Among the resilience components, EMA filtering hurts accuracy under delay, Huber is neutral, and the heartbeat is not exercised by the tested conditions. The fixed stack has not yet been re-validated in Gazebo.
+We evaluate the system in a 425-run kinematic campaign (25 seeds $\times$ 17 conditions) on the deployed stack in the collapsed-building arena, mirroring the ROS node pipeline with packet drop, delay and jitter applied to every peer measurement, and in Gazebo Harmonic. In the campaign the deployed stack (look-ahead CBF-QP, per-robot navigation, formation anchor, calm twist mapping, delay compensation) never collided and converged in every clean and impaired run (0.04-0.05 m final shape error), unaffected by up to 50% packet loss and 100 ms delay; at 200 ms accuracy degrades to 0.13 m. Without avoidance every run collided. In Gazebo the default configuration converges in 7.9 s to 0.06 m and stays collision-free under the launch fault settings.
 
 ---
 
@@ -143,19 +140,30 @@ where $\psi_\delta(\cdot)$ is the Huber penalty gradient with threshold $\delta 
 $$\psi_\delta(e) = \begin{cases} e, & \|e\| \le \delta \\ \delta \frac{e}{\|e\|}, & \|e\| > \delta \end{cases}$$
 Huber thresholding clips extreme gradient surges caused by bursty network packet delivery, preventing actuator saturation.
 
-### 4.2 Distance-Based Formation Rigidity
-*Theory*: Based on Oh & Ahn (2014), the formation is defined purely by desired pairwise scalar distances $d_{ij}^* = \|d_i^* - d_j^*\|$, requiring no shared coordinate orientation. The energy potential is:
-$$V(p) = \frac{1}{4} \sum_{(i,j) \in \mathcal{E}} \left( \|p_i - p_j\|^2 - (d_{ij}^*)^2 \right)^2$$
-The resulting gradient descent control law is:
-$$\dot{p}_i = -k_{\text{dist}} \sum_{j \in \mathcal{N}_i} \left( \|p_i - p_j\|^2 - (d_{ij}^*)^2 \right) (p_i - p_j) + u_i^{\text{align}}$$
-where $u_i^{\text{align}}$ is a rotational alignment torque preventing mirror-image reflections and manifold topological folds.
+### 4.2 Distance-Based Control with Signed-Area Constraints
+*Theory*: The gradient law of Krick, Broucke and Francis (2009) on the rigid complete graph,
+$$u_i = k \sum_{j} \mathrm{sat}\big(\|p_{ij}\| - d_{ij}^*\big)\,\frac{p_{ij}}{\|p_{ij}\|},$$
+needs no shared orientation, but it is only locally convergent and cannot distinguish the
+formation from its mirror image. From the Gazebo spawn it stalls at 2.68 m, and it reached
+the exact pentagon from only 20 of 100 random starts (39 up to reflection). Following
+Anderson et al. (2017) we add signed-area terms $A_{ijk} = \frac12 p_{ij}\times p_{ik}$:
+$$u_i \mathrel{+}= -k\,a \sum_{j<k} \mathrm{sat}\big(A_{ijk} - A_{ijk}^*\big)\,\nabla_{p_i} A_{ijk}, \qquad a = 0.5,$$
+which are also invariant to rotations of the measurement frame and fix the orientation:
+100/100 random starts and the Gazebo spawn converge exactly. Because the formation's
+orientation is free, the navigation target and the anchor use the best-fit rotation of the
+template to the measured neighbours, so the anchor fixes only the formation's position.
 
-### 4.3 Bearing-Based Formation Control
-*Theory*: Based on Zhao & Zelazo (2016), the target geometry is specified by inter-agent unit bearing vectors $g_{ij}^* = \frac{d_j^* - d_i^*}{\|d_j^* - d_i^*\|} \in \mathbb{S}^1$. The orthogonal projection matrix onto the nullspace of $g_{ij}^*$ is:
-$$P_{g_{ij}^*} = I_2 - g_{ij}^* (g_{ij}^*)^T$$
-The decentralized control law minimizes bearing misalignment:
-$$\dot{p}_i = -k_{\text{bear}} \sum_{j \in \mathcal{N}_i} P_{g_{ij}^*} (p_j - p_i)$$
-Since $P_{g_{ij}^*} g_{ij}^* = 0$, velocity commands vanish if and only if all agents lie on their designated bearing rays, enforcing scale-invariant geometric rigidity.
+### 4.3 Bearing-Only Control with a Scale Term
+*Theory*: The bearing-only law of Zhao & Zelazo (2016) with measured bearings
+$g_{ij} = p_{ij}/\|p_{ij}\|$ and $P(g) = I - g g^\top$, plus a weak range term fixing the scale
+(bearing-only laws preserve the initial scale):
+$$u_i = k \sum_j \Big[-d_{ij}^*\,P(g_{ij})\,g_{ij}^* + s\,\mathrm{sat}\big(\|p_{ij}\| - d_{ij}^*\big)\,g_{ij}\Big], \qquad s = 0.5.$$
+Bearings are world-frame directions, so like 4.1 it needs a common heading.
+
+*(Before 2026-11-07, 4.2 added the displacement-consensus term as "alignment", making it a
+displacement controller in disguise, and 4.3 reduced to displacement consensus with
+anisotropic gains; neither the stress matrix nor the alignment torque described in earlier
+versions of this report existed in the code.)*
 
 ---
 
@@ -227,7 +235,7 @@ To ensure scientific validity, we executed **325 full simulations** comprising 2
 
 ## 7. Limitations & Honest Engineering Caveats
 
-1. **Empirical Collision Avoidance vs. Formal Guarantees**: While 100% collision-free in our 325-run evaluation, we designate this as **empirically collision-free**. Formal forward invariance guarantees hold under continuous control and unbounded acceleration; real physical unicycles possess nonholonomic non-integrable Pfaffian constraints and finite torque limits.
+1. **Empirical Collision Avoidance vs. Formal Guarantees**: While 100% collision-free in our 425-run evaluation, we designate this as **empirically collision-free**. Formal forward invariance guarantees hold under continuous control and unbounded acceleration; real physical unicycles possess nonholonomic non-integrable Pfaffian constraints and finite torque limits.
 2. **Topological Disconnection Under Extreme Dropout**: At 50% packet dropouts, 1 out of 25 seeds experienced a glancing inter-agent touch ($d_{\min} = 0.491\,\text{m} < 0.50\,\text{m}$), yielding a 96% collision-free rate. High packet drop combined with unicycle rotation limits can temporarily breach margin thresholds.
 3. **Hardware-in-the-Loop Transfer**: All benchmarks were executed in Gazebo Harmonic physics and 50 Hz deterministic unicycle simulations. Ground contact friction, tire deformation, and real WiFi packet fragmentation must be validated on physical TurtleBot3 hardware.
 
@@ -242,7 +250,8 @@ We built a modular ROS 2 formation-control stack with relative sensing, cooperat
 ## References
 
 1. W. Ren and R. W. Beard, *Distributed Consensus in Multi-vehicle Cooperative Control*, Springer, 2008.
-2. K.-K. Oh and H.-S. Ahn, "Distance-based formation control using Euclidean distance dynamics," *Automatica*, vol. 50, no. 10, pp. 2526–2533, 2014.
+2. L. Krick, M. E. Broucke, and B. A. Francis, "Stabilisation of infinitesimally rigid formations of multi-robot networks," *International Journal of Control*, vol. 82, no. 3, pp. 423–439, 2009.
+2a. B. D. O. Anderson, Z. Sun, T. Sugie, S. Azuma, and K. Sakurama, "Formation shape control with distance and area constraints," *IFAC Journal of Systems and Control*, vol. 1, pp. 2–12, 2017.
 3. S. Zhao and D. Zelazo, "Bearing rigidity and almost global bearing-only formation stabilization," *IEEE Transactions on Automatic Control*, vol. 61, no. 5, pp. 1255–1268, 2016.
 4. A. D. Ames, S. Coogan, M. Egerstedt, G. Notomista, K. Sreenath, and P. Tabuada, "Control barrier functions: Theory and applications," in *Proc. IEEE Conf. Decision and Control (CDC)*, 2019, pp. 3420–3431.
 5. J. Cortez, D. Oetomo, C. Manzie, and P. Choong, "Control barrier functions for mechanical systems: Complete characterization and safe control," *IEEE Transactions on Automatic Control*, vol. 67, no. 2, pp. 611–626, 2022.

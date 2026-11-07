@@ -50,6 +50,7 @@ from swarm_formation.kinematics import compute_unicycle_twist, UnicycleMapper, w
 from swarm_formation.localization import RobotEKF
 from swarm_formation.navigation import (
     anchor_slot_position,
+    fit_template_rotation,
     formation_target,
     navigation_force,
     NavigationGuide,
@@ -154,6 +155,8 @@ class CampaignRunConfig:
     odom_speed_noise_frac: float = 0.02
     odom_yaw_rate_noise_std: float = 0.02
     use_landmarks: bool = True
+    # localization_node use_peer_covariance: propagate the peer's estimate uncertainty
+    use_peer_covariance: bool = True
 
     # Static obstacles and walls of collapsed_building.sdf (sensed and fed to the CBF;
     # contact is not simulated, clearance violations are only measured)
@@ -396,10 +399,13 @@ def run_single_simulation(
                 delivered[i][src] = (rng_m, brg_m, deliv_t, t_meas)
                 # localization_node: cooperative update with the peer's current estimate
                 px, py, _ = ekfs[src - 1].get_pose()
+                peer_p = ekfs[src - 1].get_covariance()
                 ekfs[i].update_range_bearing(
                     px, py, rng_m, brg_m,
                     var_range=max(config.range_noise_std ** 2, 0.05),
                     var_bearing=max(config.bearing_noise_std ** 2, 0.03),
+                    target_cov=[peer_p[0][:2], peer_p[1][:2]]
+                    if config.use_peer_covariance else None,
                 )
 
         # localization_node: landmark updates (onboard sensing, not networked)
@@ -513,18 +519,29 @@ def run_single_simulation(
                 fx = fx * scale + fx_apf
                 fy = fy * scale + fy_apf
 
+            # Distance control leaves the orientation free: anchor and navigation target
+            # follow the formation's best-fit orientation (robot_node does the same).
+            free_rotation = controller.name == 'distance'
+            pattern_rotation = 0.0
+            if free_rotation and config.anchor_gain > 0.0:
+                pattern_rotation = fit_template_rotation(
+                    rel_disp, target_offsets[robot_id], active_mask
+                )
+
             guide = nav_guides[i]
             if guide is not None:
                 ex_n, ey_n, _ = ekfs[i].get_pose()
                 rel_now = {pid: rel_disp.get(pid, (e[0], e[1]))
                            for pid, e in rel_store[i].items()}
+                anchor_slot = anchor_slot_position(
+                    robot_id, n, config.formation_radius, config.formation_center,
+                    rotation=pattern_rotation,
+                )
                 target = formation_target(
                     (ex_n, ey_n), rel_now, target_offsets[robot_id],
                     consensus_gain=config.k_p,
-                    anchor_slot=anchor_slot_position(
-                        robot_id, n, config.formation_radius, config.formation_center
-                    ),
-                    anchor_gain=config.anchor_gain,
+                    anchor_slot=anchor_slot, anchor_gain=config.anchor_gain,
+                    fit_rotation=free_rotation,
                 )
                 steer_point = guide.steer(t, (ex_n, ey_n), target)
                 if steer_point is not None:
@@ -536,7 +553,7 @@ def run_single_simulation(
                 ex_i, ey_i, _ = ekfs[i].get_pose()
                 fax, fay = compute_anchor_force(
                     robot_id, n, config.formation_radius, config.formation_center,
-                    (ex_i, ey_i), config.anchor_gain,
+                    (ex_i, ey_i), config.anchor_gain, rotation=pattern_rotation,
                 )
                 fx += fax
                 fy += fay
@@ -610,6 +627,7 @@ def run_single_simulation(
         'seed': seed,
         'final_shape_error': float(shape_errors[-1]),
         'final_centroid': (float(sum(cur_x) / n), float(sum(cur_y) / n)),
+        'final_positions': [(float(cur_x[i]), float(cur_y[i])) for i in range(n)],
         'min_shape_error': float(np.min(shape_errors)),
         'global_min_distance': float(running_min_dist),
         'min_obstacle_clearance': float(min_obstacle_clearance),

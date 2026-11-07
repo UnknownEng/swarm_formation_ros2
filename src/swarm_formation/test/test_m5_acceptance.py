@@ -19,9 +19,11 @@ import math
 import os
 from typing import List
 
-from geometry_msgs.msg import Pose, PoseStamped, Twist, Vector3
+from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Twist, Vector3
 from nav_msgs.msg import Odometry
 import rclpy
+from swarm_formation.campaign_runner import DEPLOYED, NOMINAL_IMPAIRMENT
+from swarm_formation.campaign_simulator import CampaignRunConfig, run_single_simulation
 from swarm_formation.localization_node import LocalizationNode
 from swarm_formation.robot_node import GazeboSwarmNode
 from swarm_interfaces.msg import NeighborList, NeighborMeasurement, ObstacleMeasurement
@@ -201,3 +203,50 @@ def test_robot_node_receives_estimated_pose() -> None:
 
     finally:
         robot.destroy_node()
+
+
+def test_localization_node_shares_and_uses_covariance() -> None:
+    """The node publishes its covariance and weights peers by theirs."""
+    if not rclpy.ok():
+        rclpy.init()
+    node = LocalizationNode()
+    try:
+        sent: List[PoseWithCovarianceStamped] = []
+
+        class Recorder:
+            def publish(self, msg: PoseWithCovarianceStamped) -> None:
+                sent.append(msg)
+
+        node.pub_estimated_pose_cov = Recorder()
+        node._timer_callback()
+        node._timer_callback()
+        assert sent, 'estimated_pose_cov was not published'
+        p = node.ekf.get_covariance()
+        cov = sent[-1].pose.covariance
+        assert cov[0] == p[0][0] and cov[7] == p[1][1] and cov[35] == p[2][2]
+
+        peer = PoseWithCovarianceStamped()
+        peer.pose.covariance[0] = 0.3
+        peer.pose.covariance[7] = 0.2
+        node._peer_covariance_callback(peer, 2)
+        assert node.peer_covariances[2] == [[0.3, 0.0], [0.0, 0.2]]
+    finally:
+        node.destroy_node()
+
+
+def test_landmark_free_formation_still_converges() -> None:
+    """
+    Without the landmark map the absolute estimate drifts, but formation control still works.
+
+    Odometry plus peer range/bearing cannot fix the global frame, so the absolute EKF error
+    grows to tens of centimetres; the formation is controlled from relative measurements,
+    so it still converges without collisions.
+    """
+    params = dict(DEPLOYED)
+    params.update(NOMINAL_IMPAIRMENT)
+    r = run_single_simulation(
+        CampaignRunConfig(duration_sec=30.0, use_landmarks=False, **params), seed=1
+    )
+    assert r['is_converged']
+    assert r['empirically_collision_free'] and r['obstacle_collision_free']
+    assert r['mean_est_error'] > 0.1

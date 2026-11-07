@@ -9,6 +9,33 @@
 
 ---
 
+> **Erratum (2026-11-07).** The package as delivered could not reproduce itself, and its
+> acceptance tests only checked that files and keywords existed:
+> - `Dockerfile` installed `python3-pep257`, which does not exist in Ubuntu 24.04, so the
+>   image could not build (now `ros-jazzy-ament-copyright/-flake8/-pep257` + `procps`).
+> - `reproduce_all.sh` ran `pytest-3` from the workspace root, where the ament lint tests
+>   also scan `build/` and `install/` and fail; it passed `--input-bag` to `process_bag` and
+>   `plot_bag`, whose bag path is positional (the README had the same flags); it ran
+>   Gazebo with the resilient/APF configuration instead of the deployed one; and it never
+>   compared the regenerated numbers with the documented ones.
+> - The README and technical report reported the 325-run campaign later found invalid
+>   (M8 erratum); the M4-M7 Gazebo numbers were taken without wheel odometry.
+>
+> **Resolved (2026-11-07) - status: 🟢 complete.** `reproduce_all.sh` now builds, runs the
+> full test suite from the package directory, runs Gazebo in the default configuration
+> (with a check that wheel odometry arrived), processes and plots the bag with the real
+> CLI, regenerates the 425-run campaign, and in a final step checks the regenerated
+> results against the README claims (Gazebo converged, collision-free, campaign safety and
+> convergence rates, figures present), exiting non-zero on any mismatch. Every command has
+> a timeout so a hang is reported instead of waiting forever. `test_m9_acceptance.py` now
+> tests behaviour: Dockerfile packages exist in apt, the documented CLI flags exist in the
+> tools' argparse, the script runs tests from the package directory, and the README and
+> reports carry the current results; run against the old files these checks fail. The
+> end-to-end run of the script and the repeated Gazebo runs are recorded in README
+> Sections 6.1-6.2. Docker itself was not built here (no Docker on the test machine).
+
+---
+
 ## 1. Executive Summary & Scope
 
 ### 1.1 Requirements

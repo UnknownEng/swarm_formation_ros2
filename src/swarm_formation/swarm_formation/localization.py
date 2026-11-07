@@ -20,7 +20,7 @@ and landmark observations without accessing global ground truth.
 """
 
 import math
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from .kinematics import wrap_angle
 
@@ -143,6 +143,7 @@ class RobotEKF:
         measured_bearing: float,
         var_range: Optional[float] = None,
         var_bearing: Optional[float] = None,
+        target_cov: Optional[Sequence[Sequence[float]]] = None,
     ) -> None:
         """
         Execute EKF correction step using relative range and bearing observation.
@@ -153,6 +154,12 @@ class RobotEKF:
         :param measured_bearing: Observed bearing in radians relative to body frame.
         :param var_range: Measurement range variance (m^2).
         :param var_bearing: Measurement bearing variance (rad^2).
+        :param target_cov: 2x2 position covariance of the target, when the target is a
+            peer's *estimate* rather than a surveyed landmark. Its uncertainty is
+            propagated into the innovation covariance, R_eff = R + J Sigma J^T with
+            J = d h / d target ("consider" update), so an uncertain peer cannot pull this
+            robot's estimate with the weight of an exact beacon. Cross-correlation between
+            the two estimates is still neglected.
         """
         dx = target_x - self.x
         dy = target_y - self.y
@@ -195,6 +202,21 @@ class RobotEKF:
         s01 = hp00 * h10 + hp01 * h11 + hp02 * h12
         s10 = hp10 * h00 + hp11 * h01
         s11 = hp10 * h10 + hp11 * h11 + hp12 * h12 + r1
+
+        if target_cov is not None:
+            # J = d[range, bearing] / d[target_x, target_y] = -H[:, :2]
+            j00, j01 = -h00, -h01
+            j10, j11 = -h10, -h11
+            c00, c01 = target_cov[0][0], target_cov[0][1]
+            c10, c11 = target_cov[1][0], target_cov[1][1]
+            jc00 = j00 * c00 + j01 * c10
+            jc01 = j00 * c01 + j01 * c11
+            jc10 = j10 * c00 + j11 * c10
+            jc11 = j10 * c01 + j11 * c11
+            s00 += jc00 * j00 + jc01 * j01
+            s01 += jc00 * j10 + jc01 * j11
+            s10 += jc10 * j00 + jc11 * j01
+            s11 += jc10 * j10 + jc11 * j11
 
         det_s = s00 * s11 - s01 * s10
         if abs(det_s) < 1e-9:

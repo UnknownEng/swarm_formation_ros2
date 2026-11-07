@@ -59,11 +59,12 @@ class CampaignVisualizer:
     def plot_ablation_study(self, filename: str = 'ablation_study_barchart.png') -> str:
         """Generate comparative bar chart for ablation conditions with 95% CI error bars."""
         conditions = [
-            ('impaired_cbf_only', 'CBF only\n(no resilience)'),
-            ('impaired_no_huber', 'Full stack\nwithout Huber'),
-            ('impaired_no_ema', 'Full stack\nwithout EMA'),
-            ('impaired_no_heartbeat', 'Full stack\nwithout Heartbeat'),
-            ('impaired_full_resilient_cbf', 'Full stack'),
+            ('deployed_impaired', 'Deployed\nstack'),
+            ('impaired_no_navigation', 'without\nnavigation'),
+            ('impaired_no_anchor', 'without\nanchor'),
+            ('impaired_no_delay_comp', 'without delay\ncompensation'),
+            ('impaired_legacy_mapper', 'legacy\ntwist mapper'),
+            ('impaired_with_resilience', '+ Huber/EMA/\nheartbeat'),
         ]
 
         labels = []
@@ -82,14 +83,14 @@ class CampaignVisualizer:
                 safe_rates.append(s['collision_free_rate_pct'])
                 conv_rates.append(s.get('convergence_rate_pct', float('nan')))
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
         fig.suptitle(
-            'Leave-one-out ablation under nominal impairment '
+            'Leave-one-out ablation of the deployed stack under nominal impairment '
             f'(15% drop, 80+/-40 ms delay, noise; {self._num_seeds()} seeds)',
             fontsize=14, fontweight='bold')
 
         x_pos = np.arange(len(labels))
-        colors = ['#94a3b8', '#60a5fa', '#38bdf8', '#818cf8', '#22c55e']
+        colors = ['#22c55e', '#94a3b8', '#60a5fa', '#38bdf8', '#818cf8', '#f59e0b'][:len(labels)]
 
         # Panel 1: Formation Shape Error (RMS)
         ax1.bar(x_pos, shape_means, yerr=shape_ci_errs, capsize=5, color=colors,
@@ -130,9 +131,9 @@ class CampaignVisualizer:
     def plot_safety_comparison(self, filename: str = 'safety_comparison_apf_vs_cbf.png') -> str:
         """Generate box plot distribution comparing Unshielded, APF-only, and CBF-QP safety."""
         conditions = [
-            ('baseline_unshielded', 'Unshielded\n(No Avoidance)'),
-            ('apf_only', 'APF-Only\n(Potential Field)'),
-            ('cbf_qp_only', 'CBF-QP Filter\n(Control Barrier)'),
+            ('arena_unshielded', 'No avoidance'),
+            ('arena_apf', 'APF instead of CBF'),
+            ('deployed_clean', 'Deployed (CBF-QP)'),
         ]
 
         data_boxes = []
@@ -145,7 +146,7 @@ class CampaignVisualizer:
                 labels.append(name)
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.set_title('Collision Avoidance under Crossing Trajectories '
+        ax.set_title('Collision Avoidance in the Arena, Crossing Starts '
                      f'({self._num_seeds()} seeds, clean channel)',
                      fontsize=13, fontweight='bold')
 
@@ -182,7 +183,7 @@ class CampaignVisualizer:
     def plot_packet_drop_sweep(self, filename: str = 'difficulty_sweep_packet_drop.png') -> str:
         """Generate line plot with 95% CI bands across packet loss rates (0% to 50%)."""
         sweep_keys = [
-            ('full_resilient_cbf', 0.0),
+            ('deployed_clean', 0.0),
             ('sweep_drop_15pct', 0.15),
             ('sweep_drop_30pct', 0.30),
             ('sweep_drop_50pct', 0.50),
@@ -206,7 +207,7 @@ class CampaignVisualizer:
                 conv_rates.append(s.get('convergence_rate_pct', float('nan')))
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        fig.suptitle(f'Packet Loss Sweep, full stack ({self._num_seeds()} seeds)',
+        fig.suptitle(f'Packet Loss Sweep, deployed stack ({self._num_seeds()} seeds)',
                      fontsize=14, fontweight='bold')
 
         # Panel 1: Shape Error vs Packet Drop
@@ -239,7 +240,7 @@ class CampaignVisualizer:
     def plot_latency_sweep(self, filename: str = 'difficulty_sweep_latency.png') -> str:
         """Generate line plot with 95% CI bands across communication latency (0 to 200ms)."""
         sweep_keys = [
-            ('full_resilient_cbf', 0.0),
+            ('deployed_clean', 0.0),
             ('sweep_delay_50ms', 50.0),
             ('sweep_delay_100ms', 100.0),
             ('sweep_delay_200ms', 200.0),
@@ -262,10 +263,10 @@ class CampaignVisualizer:
                 dist_means.append(s['min_distance_mean'])
                 conv_rates.append(s.get('convergence_rate_pct', float('nan')))
 
-        fixed = self.data.get('sweep_delay_200ms_fixed_margin', {}).get('summary')
+        matched = self.data.get('sweep_delay_200ms_matched', {}).get('summary')
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        fig.suptitle('Applied Latency Sweep, full stack, CBF margin matched to latency '
+        fig.suptitle('Applied Latency Sweep, deployed stack (CBF delay bound 50 ms) '
                      f'({self._num_seeds()} seeds)',
                      fontsize=14, fontweight='bold')
 
@@ -285,10 +286,10 @@ class CampaignVisualizer:
 
         # Panel 2: Mean Min Distance vs Delay
         ax2.plot(delays, dist_means, 'c-^', linewidth=2,
-                 label='Mean min distance (matched margin)')
-        if fixed is not None:
-            ax2.plot([200.0], [fixed['min_distance_mean']], 'rx', markersize=10, mew=2,
-                     label='200 ms with fixed 50 ms margin')
+                 label='Mean min distance (50 ms bound)')
+        if matched is not None:
+            ax2.plot([200.0], [matched['min_distance_mean']], 'gx', markersize=10, mew=2,
+                     label='200 ms with matched 200 ms bound')
         ax2.axhline(0.50, color='r', linestyle='-', linewidth=2.0,
                     label='Collision Limit (0.50m)')
         ax2.set_xlabel('Applied Delay (ms)', fontsize=11)

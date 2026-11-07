@@ -9,6 +9,12 @@
 
 ---
 
+> **Erratum (2026-11-07).** All Gazebo results below were measured before 2026-11-07 with two defects that invalidate them: wheel odometry never reached the EKF (bridge type `gz.msgs.OdometryWithCovariance` vs the DiffDrive plugin's `gz.msgs.Odometry`; `/robot_i/odom` carried 0 messages, and the EKF fallback dead-reckoned with the first commanded velocity), and all nodes ran on the wall clock while Gazebo ran at about 5% of real time. Current Gazebo results are in README Section 6.1/6.2.
+>
+> The pipeline itself works (verified on 2026-11-07 bags), but the recorded topic list named `/swarm/network_status`, `/swarm/fault_status` and `/robot_i/obstacles`, which do not exist (fixed), and the documented `--input-bag` flag is wrong: the bag path is a positional argument of `process_bag` and `plot_bag`.
+
+---
+
 ## 1. Executive Summary & Scope
 
 ### 1.1 Requirements

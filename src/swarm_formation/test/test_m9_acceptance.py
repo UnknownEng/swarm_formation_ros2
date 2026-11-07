@@ -12,113 +12,138 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Acceptance tests for Milestone M9: Documentation, Docker, and Reproduction Package."""
+"""
+Acceptance tests for Milestone M9: documentation, Docker image and reproduction pipeline.
+
+These check behaviour, not keywords: the earlier version only searched for words, and
+passed while the Dockerfile requested a package that does not exist on Ubuntu 24.04,
+the pipeline called the bag tools with flags they do not accept, and the tests were
+run from a directory where the lint tests fail.
+"""
 
 import os
+import re
+import shlex
+import shutil
 import subprocess
 
+import pytest
 
-def test_dockerfile_completeness():
-    """Verify Dockerfile exists and conforms to ROS 2 Jazzy specification."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-    dockerfile_path = os.path.join(repo_root, 'Dockerfile')
-    assert os.path.isfile(dockerfile_path), f'Dockerfile missing at {dockerfile_path}'
+PKG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+WS_DIR = os.path.abspath(os.path.join(PKG_DIR, '..', '..'))
+DOCKERFILE = os.path.join(WS_DIR, 'Dockerfile')
+SCRIPT = os.path.join(WS_DIR, 'reproduce_all.sh')
+README = os.path.join(WS_DIR, 'README.md')
+REPORT = os.path.join(WS_DIR, 'reports', 'TECHNICAL_REPORT.md')
 
-    with open(dockerfile_path, 'r', encoding='utf-8') as f:
-        content = f.read()
 
+def _read(path: str) -> str:
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+def _dockerfile_apt_packages() -> list:
+    text = _read(DOCKERFILE).replace('\\\n', ' ')
+    match = re.search(r'apt-get install -y --no-install-recommends(.*?)&&', text, re.S)
+    assert match, 'apt-get install line not found in Dockerfile'
+    return [tok for tok in match.group(1).split() if not tok.startswith('-')]
+
+
+def test_dockerfile_structure():
+    """The image builds the workspace and runs reproduce_all.sh through an entrypoint."""
+    content = _read(DOCKERFILE)
     assert 'FROM osrf/ros:jazzy-desktop' in content
     assert 'colcon build' in content
-    assert 'ros-jazzy-ros-gz' in content
+    assert 'COPY reproduce_all.sh' in content
     assert 'ENTRYPOINT' in content
-    assert 'reproduce_all.sh' in content
+    packages = _dockerfile_apt_packages()
+    for required in ('ros-jazzy-ros-gz', 'ros-jazzy-rosbag2-storage-mcap', 'python3-pytest',
+                     'ros-jazzy-ament-flake8', 'ros-jazzy-ament-pep257', 'procps'):
+        assert required in packages, required
+    assert 'python3-pep257' not in packages, 'python3-pep257 does not exist on Ubuntu 24.04'
 
 
-def test_readme_completeness():
-    """Verify README.md contains complete system architecture, references, and guide."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-    readme_path = os.path.join(repo_root, 'README.md')
-    assert os.path.isfile(readme_path), f'README.md missing at {readme_path}'
-
-    with open(readme_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    # Check for core sections and diagrams
-    assert 'flowchart TD' in content or 'mermaid' in content
-    assert 'neighbor_sensor' in content
-    assert 'localization_node' in content
-    assert 'safety_filter' in content
-    assert 'network_impairment' in content
-    assert 'fault_injector' in content
-    assert 'ToggleLink' in content
-    assert 'TriggerFault' in content
-    assert 'Displacement-Based' in content or 'displacement' in content
-    assert 'Distance-Based' in content or 'distance' in content
-    assert 'Bearing-Based' in content or 'bearing' in content
-    assert 'Control Barrier Function' in content or 'CBF-QP' in content
-    assert 'reproduce_all.sh' in content
-    assert '95% Confidence Interval' in content
+@pytest.mark.skipif(shutil.which('apt-cache') is None, reason='needs apt (Ubuntu)')
+def test_dockerfile_apt_packages_exist():
+    """Every package the image installs must be available, or `docker build` fails."""
+    missing = []
+    for pkg in _dockerfile_apt_packages():
+        out = subprocess.run(['apt-cache', 'policy', pkg], capture_output=True, text=True,
+                             timeout=60).stdout
+        cand = re.search(r'Candidate:\s*(\S+)', out)
+        if not cand or cand.group(1) == '(none)':
+            missing.append(pkg)
+    assert not missing, f'apt packages not available: {missing}'
 
 
-def test_technical_report_completeness():
-    """Verify reports/TECHNICAL_REPORT.md contains complete academic paper content."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-    report_path = os.path.join(repo_root, 'reports', 'TECHNICAL_REPORT.md')
-    assert os.path.isfile(report_path), f'TECHNICAL_REPORT.md missing at {report_path}'
-
-    with open(report_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    assert 'Abstract' in content
-    assert 'Ren & Beard' in content or 'Ren' in content
-    assert 'Oh & Ahn' in content or 'Oh' in content
-    assert 'Zhao & Zelazo' in content or 'Zhao' in content
-    assert 'Extended Kalman Filter' in content or 'EKF' in content
-    assert 'Control Barrier Function' in content
-    assert 'D_s^{\\text{eff}}' in content or 'D_s' in content
-    assert '325' in content
-    assert '47.2%' in content or '208.8' in content
-    assert 'References' in content
+def test_reproduce_script_is_valid_and_executable():
+    """The pipeline is executable bash and runs every stage."""
+    assert os.access(SCRIPT, os.X_OK), 'reproduce_all.sh is not marked executable'
+    res = subprocess.run(['bash', '-n', SCRIPT], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    content = _read(SCRIPT)
+    for stage in ('colcon build', 'gazebo_swarm_launch.py', 'process_bag', 'plot_bag',
+                  'run_campaign', 'plot_campaign', 'STEP 7/7'):
+        assert stage in content, stage
 
 
-def test_reproduce_all_script_validity():
-    """Verify reproduce_all.sh exists, is executable, and has valid bash syntax."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-    script_path = os.path.join(repo_root, 'reproduce_all.sh')
-    assert os.path.isfile(script_path), f'reproduce_all.sh missing at {script_path}'
-    assert os.access(script_path, os.X_OK), 'reproduce_all.sh is not marked executable'
+def test_reproduce_script_runs_tests_from_the_package_directory():
+    """From the workspace root, the ament lint tests also scan build/ and install/."""
+    content = _read(SCRIPT)
+    assert 'cd "${SCRIPT_DIR}/src/swarm_formation" && timeout' in content
+    assert 'pytest-3 "${SCRIPT_DIR}/src/swarm_formation/test"' not in content
 
-    # Run bash -n syntax check
-    res = subprocess.run(['bash', '-n', script_path], capture_output=True, text=True)
-    assert res.returncode == 0, f'bash syntax check failed: {res.stderr}'
 
-    with open(script_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+def _tool_options(module: str) -> set:
+    """Option flags accepted by a console tool's argparse parser (parsed from source)."""
+    src = _read(os.path.join(PKG_DIR, 'swarm_formation', f'{module}.py'))
+    return set(re.findall(r"add_argument\(\s*'(--[a-z0-9-]+)'", src))
 
-    assert 'colcon build' in content
-    assert 'pytest-3' in content
-    assert 'gazebo_swarm_launch.py' in content
-    assert 'process_bag' in content
-    assert 'plot_bag' in content
-    assert 'run_campaign' in content
-    assert 'plot_campaign' in content
+
+@pytest.mark.parametrize('doc', [SCRIPT, README])
+def test_bag_tool_invocations_match_their_parsers(doc):
+    """Every flag passed to process_bag / plot_bag in the docs and script must exist."""
+    accepted = {'process_bag': _tool_options('rosbag_processor'),
+                'plot_bag': _tool_options('plot_generator'),
+                'run_campaign': _tool_options('campaign_runner'),
+                'plot_campaign': _tool_options('campaign_visualizer')}
+    text = _read(doc).replace('\\\n', ' ')
+    found = 0
+    for tool, options in accepted.items():
+        for match in re.finditer(rf'ros2 run swarm_formation {tool}([^\n]*)', text):
+            found += 1
+            for tok in shlex.split(match.group(1), posix=True):
+                if tok.startswith('--'):
+                    assert tok in options, f'{os.path.basename(doc)}: {tool} has no option {tok}'
+    assert found > 0
+
+
+def test_readme_documents_current_results():
+    """README carries the current campaign and Gazebo results, not the withdrawn ones."""
+    content = _read(README)
+    for section in ('## 6. Statistical Campaign (425 Runs)', '### 6.1 Gazebo Validation',
+                    '### 6.2 Gazebo Fault Tests', 'reproduce_all.sh', 'LICENSE'):
+        assert section in content, section
+    assert '95% CI' in content
+    assert os.path.isfile(os.path.join(WS_DIR, 'LICENSE'))
+
+
+def test_technical_report_states_the_erratum_and_current_results():
+    """The report must flag the withdrawn claims and present the current campaign."""
+    content = _read(REPORT)
+    assert 'Erratum' in content
+    assert 'Current M8 results (425 runs' in content
+    abstract = content[content.index('## Abstract'):content.index('## 1.')]
+    assert '425-run' in abstract
+    assert '47.2%' not in abstract, 'the withdrawn energy claim is back in the abstract'
 
 
 def test_campaign_artifacts_presence():
-    """Verify all statistical campaign results and publication figures exist."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-    summary_csv = os.path.join(repo_root, 'results', 'M8', 'campaign_summary.csv')
-    results_json = os.path.join(repo_root, 'results', 'M8', 'campaign_results.json')
-    plots_dir = os.path.join(repo_root, 'results', 'M8', 'plots')
-
-    assert os.path.isfile(summary_csv)
-    assert os.path.isfile(results_json)
-    for fig_name in [
-        'ablation_study_barchart.png',
-        'safety_comparison_apf_vs_cbf.png',
-        'difficulty_sweep_packet_drop.png',
-        'difficulty_sweep_latency.png',
-    ]:
-        fig_path = os.path.join(plots_dir, fig_name)
-        assert os.path.isfile(fig_path), f'Missing campaign figure {fig_path}'
-        assert os.path.getsize(fig_path) > 10000, f'Figure {fig_name} is unexpectedly small'
+    """Committed campaign results and the four figures exist and are non-trivial."""
+    m8 = os.path.join(WS_DIR, 'results', 'M8')
+    assert os.path.isfile(os.path.join(m8, 'campaign_summary.csv'))
+    assert os.path.isfile(os.path.join(m8, 'campaign_results.json'))
+    for fig in ('ablation_study_barchart.png', 'safety_comparison_apf_vs_cbf.png',
+                'difficulty_sweep_packet_drop.png', 'difficulty_sweep_latency.png'):
+        path = os.path.join(m8, 'plots', fig)
+        assert os.path.isfile(path) and os.path.getsize(path) > 10000, fig

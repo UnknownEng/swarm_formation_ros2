@@ -7,6 +7,41 @@
 
 ---
 
+> **Erratum (2026-11-07).** All Gazebo results below were measured before 2026-11-07 with two defects that invalidate them: wheel odometry never reached the EKF (bridge type `gz.msgs.OdometryWithCovariance` vs the DiffDrive plugin's `gz.msgs.Odometry`; `/robot_i/odom` carried 0 messages, and the EKF fallback dead-reckoned with the first commanded velocity), and all nodes ran on the wall clock while Gazebo ran at about 5% of real time. Current Gazebo results are in README Section 6.1/6.2.
+>
+> The "Fused Sensor Sources: wheel odometry" row was not true in Gazebo, so the reported 0.0515 m estimation error came from landmark updates correcting a stale dead-reckoning. With odometry fixed, Gazebo localization error is 0.01-0.04 m. Remaining limits: peer estimates are fused as exact (no cross-covariance), and robots start with their exact pose and a global landmark map, so this is map-based localization rather than relative-only.
+
+> **Resolved (2026-11-07) - status: 🟢 complete.**
+> 1. *Peer uncertainty is now propagated.* Each localization node also publishes
+>    `/robot_i/estimated_pose_cov` (`PoseWithCovarianceStamped`), and a cooperative update
+>    uses R_eff = R + J Sigma_peer J^T with J = d(range, bearing)/d(peer position) (a
+>    "consider" update, `RobotEKF.update_range_bearing(target_cov=...)`, parameter
+>    `use_peer_covariance`, default true). Monte Carlo check
+>    (`test_localization.py::test_peer_covariance_keeps_filter_consistent`, 2000 trials,
+>    peer variance 0.25 m^2): treating the peer as exact gives a 2-DoF NEES > 10
+>    (overconfident); with the covariance it is 1.6-2.6 (consistent), and the uncertain
+>    peer drags the estimate less than half as far. Cross-correlation between robots is
+>    still neglected (a covariance-intersection or full cooperative filter would remove it).
+> 2. *Map dependence measured, not hidden.* `use_landmarks:=false` runs the EKF on odometry
+>    and peers only. Campaign simulator, deployed stack under the launch fault settings,
+>    10 seeds per cell:
+>
+>    | landmarks | peer covariance | converged | collision-free | mean abs. localization error |
+>    | :---: | :---: | :---: | :---: | :---: |
+>    | yes | yes (default) | 10/10 | 10/10 | 0.015 m |
+>    | yes | no | 10/10 | 10/10 | 0.016 m |
+>    | no | yes | 10/10 | 10/10 | 0.81 m (max 1.54 m) |
+>    | no | no | 10/10 | 10/10 | 0.91 m (max 1.82 m) |
+>
+>    Without landmarks the *absolute* pose is unobservable (odometry and relative
+>    measurements cannot fix the global frame), so it drifts, as theory predicts; the
+>    formation still converges because the controllers use relative measurements. The
+>    map-based parts (navigation, anchor, obstacle map) are what lose accuracy: the
+>    closest obstacle approach fell from 0.22 m to 0.05 m (still collision-free).
+>    `test_m5_acceptance.py::test_landmark_free_formation_still_converges` covers it.
+
+---
+
 ## 1. Scope: Required vs Delivered
 
 | Requirement | Status | Details |

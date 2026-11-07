@@ -68,3 +68,13 @@ def test_bridge_uses_the_diff_drive_odometry_message_type() -> None:
     src = open(LAUNCH, encoding='utf-8').read()
     assert "odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'" in src
     assert 'OdometryWithCovariance' not in src
+
+
+def test_spawn_perturbation_reaches_spawner_and_ekf() -> None:
+    """Seeded start offsets must go to Gazebo (-x/-y/-Y) and to the EKF initial pose."""
+    src = open(LAUNCH, encoding='utf-8').read()
+    for arg in ('spawn_seed', 'spawn_jitter', 'spawn_yaw_jitter'):
+        assert f"'{arg}'" in src
+    assert "'-Y', str(init_yaw)" in src
+    assert "'initial_yaw': init_yaw" in src
+    assert "'initial_x': init_x" in src and "'initial_y': init_y" in src

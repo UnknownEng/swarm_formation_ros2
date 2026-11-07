@@ -15,6 +15,7 @@
 """Launch Gazebo Harmonic physics simulation, spawn 5 physical robots, and launch swarm nodes."""
 
 import os
+import random
 import time
 
 from ament_index_python.packages import get_package_share_directory
@@ -57,6 +58,12 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     record_bag_str = LaunchConfiguration('record_bag').perform(context).lower()
     bag_path_arg = LaunchConfiguration('bag_path').perform(context)
     use_sim_time_str = LaunchConfiguration('use_sim_time').perform(context).lower()
+    spawn_seed = int(LaunchConfiguration('spawn_seed').perform(context))
+    spawn_jitter = float(LaunchConfiguration('spawn_jitter').perform(context))
+    spawn_yaw_jitter = float(LaunchConfiguration('spawn_yaw_jitter').perform(context))
+    truthy = ['true', '1', 'yes']
+    use_landmarks = LaunchConfiguration('use_landmarks').perform(context).lower() in truthy
+    use_peer_cov = LaunchConfiguration('use_peer_covariance').perform(context).lower() in truthy
 
     total_robots = int(total_robots_str)
     enable_faults = enable_faults_str in ['true', '1', 'yes']
@@ -143,6 +150,10 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
     bridge_args = ['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock']
     bridge_remappings = []
 
+    # Optional seeded perturbation of the start poses (as in the kinematic campaign), so
+    # repeated Gazebo runs sample different initial conditions instead of only timing noise
+    spawn_rng = random.Random(spawn_seed)
+
     # 2. Spawn each robot and prepare bridge arguments
     for i in range(1, total_robots + 1):
         if i <= len(preset_positions):
@@ -150,6 +161,12 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         else:
             init_x = float(i) * 1.5 - 4.0
             init_y = 0.0
+        init_yaw = 0.0
+        if spawn_jitter > 0.0:
+            init_x += spawn_rng.uniform(-spawn_jitter, spawn_jitter)
+            init_y += spawn_rng.uniform(-spawn_jitter, spawn_jitter)
+        if spawn_yaw_jitter > 0.0:
+            init_yaw = spawn_rng.uniform(-spawn_yaw_jitter, spawn_yaw_jitter)
 
         # Spawner node
         spawner = Node(
@@ -164,6 +181,7 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
                 '-x', str(init_x),
                 '-y', str(init_y),
                 '-z', '0.05',
+                '-Y', str(init_yaw),
             ],
         )
         actions.append(spawner)
@@ -209,9 +227,10 @@ def generate_gazebo_swarm_nodes(context: LaunchContext, *args, **kwargs):
         loc_params.append({
             'initial_x': init_x,
             'initial_y': init_y,
-            'initial_yaw': 0.0,
+            'initial_yaw': init_yaw,
             'publish_rate': 50.0,
-            'use_landmarks': True,
+            'use_landmarks': use_landmarks,
+            'use_peer_covariance': use_peer_cov,
         })
         localization_node = Node(
             package='swarm_formation',
@@ -441,6 +460,31 @@ def generate_launch_description() -> LaunchDescription:
             'record_bag',
             default_value='false',
             description='Enable automatic recording of swarm topics with ros2 bag.',
+        ),
+        DeclareLaunchArgument(
+            'spawn_seed',
+            default_value='0',
+            description='Seed for the optional start-pose perturbation.',
+        ),
+        DeclareLaunchArgument(
+            'spawn_jitter',
+            default_value='0.0',
+            description='Uniform start-position perturbation in meters (0 = preset poses).',
+        ),
+        DeclareLaunchArgument(
+            'use_landmarks',
+            default_value='true',
+            description='EKF uses the known landmark map (false = odometry + peers only).',
+        ),
+        DeclareLaunchArgument(
+            'use_peer_covariance',
+            default_value='true',
+            description='EKF propagates peer estimate covariance into cooperative updates.',
+        ),
+        DeclareLaunchArgument(
+            'spawn_yaw_jitter',
+            default_value='0.0',
+            description='Uniform start-heading perturbation in radians (0 = heading 0).',
         ),
         DeclareLaunchArgument(
             'use_sim_time',

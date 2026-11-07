@@ -4,7 +4,7 @@
   <name>swarm_interfaces</name>
   <version>0.1.0</version>
   <description>Custom ROS 2 message definitions for swarm formation and relative sensing</description>
-  <maintainer email="kali@todo.todo">kali</maintainer>
+  <maintainer email="mansoorahmedrind515@gmail.com">Mansoor Ahmed Rind</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

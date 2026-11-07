@@ -22,7 +22,7 @@ and landmark observations without accessing global ground truth for control.
 import math
 from typing import Dict, List, Optional, Tuple
 
-from geometry_msgs.msg import Pose, PoseStamped, Twist, Vector3
+from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Twist, Vector3
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from swarm_interfaces.msg import NeighborList
@@ -51,6 +51,8 @@ class LocalizationNode(Node):
         self.declare_parameter('initial_yaw', 0.0)
         self.declare_parameter('publish_rate', 50.0)
         self.declare_parameter('use_landmarks', True)
+        # Propagate peers' position uncertainty into cooperative updates
+        self.declare_parameter('use_peer_covariance', True)
 
         self.robot_id = int(self.get_parameter('robot_id').value)
         self.total_robots = int(self.get_parameter('total_robots').value)
@@ -60,6 +62,7 @@ class LocalizationNode(Node):
         self.initial_yaw = init_yaw
         self.publish_rate = float(self.get_parameter('publish_rate').value)
         self.use_landmarks = bool(self.get_parameter('use_landmarks').value)
+        self.use_peer_covariance = bool(self.get_parameter('use_peer_covariance').value)
 
         # Initialize EKF filter
         self.ekf = RobotEKF(
@@ -83,6 +86,8 @@ class LocalizationNode(Node):
 
         # Peer estimated poses: peer_id -> (x, y, yaw, timestamp)
         self.peer_estimates: Dict[int, Tuple[float, float, float, float]] = {}
+        # Peer position covariance (2x2): peer_id -> [[sxx, sxy], [syx, syy]]
+        self.peer_covariances: Dict[int, List[List[float]]] = {}
 
         # Known environmental landmarks in world frame: obstacle_id -> (ox, oy, radius)
         # (walls are sensed too, but their closest point moves, so they are not landmarks)
@@ -105,6 +110,10 @@ class LocalizationNode(Node):
         # Publishers
         self.pub_estimated_pose = self.create_publisher(
             PoseStamped, f'/robot_{self.robot_id}/estimated_pose', 10
+        )
+        # Same estimate with its covariance, so peers can weight it correctly
+        self.pub_estimated_pose_cov = self.create_publisher(
+            PoseWithCovarianceStamped, f'/robot_{self.robot_id}/estimated_pose_cov', 10
         )
         self.pub_error = self.create_publisher(
             Vector3, f'/robot_{self.robot_id}/estimation_error', 10
@@ -135,6 +144,13 @@ class LocalizationNode(Node):
                     10,
                 )
                 self.peer_subs.append(sub)
+                if self.use_peer_covariance:
+                    self.peer_subs.append(self.create_subscription(
+                        PoseWithCovarianceStamped,
+                        f'/robot_{j}/estimated_pose_cov',
+                        lambda msg, peer_id=j: self._peer_covariance_callback(msg, peer_id),
+                        10,
+                    ))
 
         # 5. Gazebo Ground Truth (EVALUATION ONLY)
         self.sub_gt = self.create_subscription(
@@ -211,6 +227,11 @@ class LocalizationNode(Node):
         now = self.get_clock().now().nanoseconds * 1e-9
         self.peer_estimates[peer_id] = (px, py, pyaw, now)
 
+    def _peer_covariance_callback(self, msg: PoseWithCovarianceStamped, peer_id: int) -> None:
+        """Record a peer's 2x2 position covariance (row-major 6x6 x/y block)."""
+        c = msg.pose.covariance
+        self.peer_covariances[peer_id] = [[c[0], c[1]], [c[6], c[7]]]
+
     def _neighbors_callback(self, msg: NeighborList) -> None:
         """Process onboard relative measurements and execute EKF correction step."""
         # 1. Update with known environmental landmarks
@@ -243,6 +264,8 @@ class LocalizationNode(Node):
                         measured_bearing=n.bearing,
                         var_range=n.range_variance if n.range_variance > 0 else 0.05,
                         var_bearing=n.bearing_variance if n.bearing_variance > 0 else 0.03,
+                        target_cov=self.peer_covariances.get(p_id)
+                        if self.use_peer_covariance else None,
                     )
 
     def _timer_callback(self) -> None:
@@ -285,6 +308,18 @@ class LocalizationNode(Node):
         msg.pose.orientation.z = math.sin(half_yaw)
         msg.pose.orientation.w = math.cos(half_yaw)
         self.pub_estimated_pose.publish(msg)
+
+        cov_msg = PoseWithCovarianceStamped()
+        cov_msg.header = msg.header
+        cov_msg.pose.pose = msg.pose
+        p = self.ekf.get_covariance()
+        cov = [0.0] * 36
+        # 6x6 row-major over (x, y, z, roll, pitch, yaw); unused axes stay 0
+        for r, ri in ((0, 0), (1, 1), (2, 5)):
+            for c, ci in ((0, 0), (1, 1), (2, 5)):
+                cov[ri * 6 + ci] = float(p[r][c])
+        cov_msg.pose.covariance = cov
+        self.pub_estimated_pose_cov.publish(cov_msg)
 
         # Evaluate estimation error against ground truth (EVALUATION ONLY)
         if self.has_ground_truth:
