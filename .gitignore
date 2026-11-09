@@ -1,0 +1,28 @@
+# colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Simulation output
+results/
+reports/
+runs/
+*.db3
+*.mcap
+
+# Editors
+.vscode/
+.idea/
+
+# Secrets
+.env
+.env.*
+*.env
+*.pem
+*.key

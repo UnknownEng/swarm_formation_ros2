@@ -1,0 +1,6 @@
+# Robot 1's outgoing links are poor (50% drop, 200 +/- 50 ms) while its incoming links
+# are clean.
+network_profile:
+  name: robot1_tx_degraded
+  links:
+    - {from: 1, to: 0, drop_rate: 0.5, delay_sec: 0.2, jitter_sec: 0.05}

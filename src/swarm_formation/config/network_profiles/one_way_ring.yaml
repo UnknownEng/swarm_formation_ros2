@@ -1,0 +1,10 @@
+# Every robot is blind to one neighbour that still receives it: links 1->2, 2->3, 3->4,
+# 4->5 and 5->1 are cut, the reverse directions work.
+network_profile:
+  name: one_way_ring
+  links:
+    - {from: 1, to: 2, drop_rate: 1.0}
+    - {from: 2, to: 3, drop_rate: 1.0}
+    - {from: 3, to: 4, drop_rate: 1.0}
+    - {from: 4, to: 5, drop_rate: 1.0}
+    - {from: 5, to: 1, drop_rate: 1.0}

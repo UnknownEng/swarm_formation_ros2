@@ -1,0 +1,6 @@
+uint32 from_robot_id
+uint32 to_robot_id
+bool enabled
+float64 drop_rate
+float64 delay_sec
+float64 jitter_sec

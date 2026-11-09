@@ -1,0 +1,10 @@
+fault_profile:
+  name: "intermittent_failure_profile"
+  description: "Intermittent sensor cutout on Robot 3 every 2 seconds with 50% duty cycle"
+  faults:
+    - robot_id: 3
+      fault_type: "intermittent_failure"
+      start_time: 4.0
+      end_time: 30.0
+      period: 2.0
+      duty_cycle: 0.5

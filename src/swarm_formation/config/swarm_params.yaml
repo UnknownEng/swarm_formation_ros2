@@ -1,0 +1,99 @@
+/**:
+  ros__parameters:
+    # Swarm Geometry and General Configuration
+    total_robots: 5
+    formation_radius: 2.0
+    control_rate: 50.0
+
+    # Kinematic Limits
+    max_linear_vel: 1.4
+    max_angular_vel: 3.0
+
+    # Relative neighbour and obstacle sensing
+    sensing_range: 6.0
+    range_noise_std: 0.0
+    bearing_noise_std: 0.0
+    sensor_rate: 20.0
+
+    # Network impairment defaults (per link, both directions)
+    default_drop_rate: 0.0
+    default_delay_sec: 0.0
+    default_jitter_sec: 0.0
+    network_rate: 50.0
+
+    # Formation control gains
+    linear_gain_kp: 1.8
+    damping_gain_kd: 0.5
+    yaw_gain_kyaw: 4.0
+
+    # Formation anchor: a weak pull of each robot toward its slot around a fixed world
+    # point, using the robot's own EKF position estimate. Displacement consensus fixes only
+    # relative positions, so without it the whole formation drifts and can be pressed
+    # against a wall. This is a shared reference point (a virtual leader), not a robot.
+    anchor_gain: 0.4
+    # Anchor gain while a robot hears no neighbour (receiver failure fallback)
+    isolated_anchor_gain: 1.8
+    formation_center_x: 0.44
+    formation_center_y: -0.44
+
+    # Navigation layer (A* on the known map, obstacles inflated by the CBF clearance).
+    # Overrides formation control only while the straight line to the target is blocked.
+    use_navigation: true
+    # Obstacle clearance for the planner; -1 = derive from the CBF settings
+    # (safety_dist_obs + cbf_lookahead + max_linear_vel * delay_bound_sec + 0.05),
+    # so routes never lead into gaps the CBF refuses to pass (0.57 m at defaults).
+    nav_inflation: -1.0
+    nav_carrot_dist: 0.6
+    nav_replan_period: 0.5
+    nav_min_force: 0.4
+
+    # Force -> (v, w) mapping. 'calm' scales the turn rate with the force magnitude and
+    # stops below stop_force until the force exceeds resume_force (hysteresis), so robots
+    # stand still once the residual formation error is a few centimetres. 'legacy' turns
+    # toward any force above 0.03 and is kept as an ablation baseline.
+    twist_mapper: calm
+    turn_full_force: 1.0
+    stop_force: 0.5
+    resume_force: 0.9
+
+    # Delay compensation: subtract the robot's own motion since each delayed measurement
+    # was taken. peer_velocity_gain > 0 also extrapolates the neighbour; the velocity
+    # estimate is noisy, so it is off by default.
+    delay_compensation: true
+    peer_velocity_gain: 0.0
+
+    # Optional robust consensus layer (use_resilient_method:=true)
+    huber_delta: 2.0
+    ema_alpha: 0.35
+    heartbeat_timeout: 1.2
+
+    # Potential-field avoidance used by the robust layer and as a CBF baseline: peers
+    apf_collision_dist: 0.50
+    apf_safe_dist: 1.10
+    apf_influence_dist: 1.80
+    apf_repulsion_gain: 1.2
+    apf_barrier_gain: 2.0
+    apf_damping_gain: 1.5
+    apf_lateral_ratio: 0.6
+
+    # Potential-field avoidance: obstacles
+    obs_influence_dist: 0.45
+    obs_safe_dist: 0.30
+    obs_repulsion_gain: 0.6
+    obs_barrier_gain: 0.8
+    obs_damping_gain: 0.8
+    obs_tangent_ratio: 1.0
+
+    # CBF-QP safety filter
+    use_safety_filter: true
+    safety_dist_peer: 0.55
+    safety_dist_obs: 0.30
+    cbf_gamma_peer: 1.5
+    cbf_gamma_obs: 2.0
+    delay_bound_sec: 0.05
+    cbf_lookahead: 0.15
+    # Share of each robot-robot barrier a robot enforces (0.5 reciprocal; see cbf_qp)
+    peer_responsibility: 0.5
+    filter_rate: 50.0
+    # Without a neighbour update for this long the filter only allows turning in place
+    perception_timeout_sec: 0.5

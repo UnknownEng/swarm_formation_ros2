@@ -1,0 +1,20 @@
+fault_profile:
+  name: "composite_faults_profile"
+  description: "Comprehensive multi-agent fault benchmark: Robot 4 death, Robot 2 sensor bias, Robot 3 intermittent cutout"
+  faults:
+    - robot_id: 4
+      fault_type: "robot_death"
+      start_time: 5.0
+      end_time: 10.0
+    - robot_id: 2
+      fault_type: "sensor_bias"
+      start_time: 2.0
+      end_time: 40.0
+      range_bias: 0.25
+      bearing_bias: 0.08
+    - robot_id: 3
+      fault_type: "intermittent_failure"
+      start_time: 6.0
+      end_time: 25.0
+      period: 2.0
+      duty_cycle: 0.5

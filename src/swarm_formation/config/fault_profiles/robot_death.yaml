@@ -1,0 +1,8 @@
+fault_profile:
+  name: "robot_death_profile"
+  description: "Temporary incapacitation of Robot 4 between t=5.0s and t=10.0s"
+  faults:
+    - robot_id: 4
+      fault_type: "robot_death"
+      start_time: 5.0
+      end_time: 10.0

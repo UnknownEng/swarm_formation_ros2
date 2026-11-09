@@ -1,0 +1,10 @@
+uint32 robot_id
+string fault_type
+bool enable
+float64 range_bias
+float64 bearing_bias
+float64 period
+float64 duty_cycle
+---
+bool success
+string message

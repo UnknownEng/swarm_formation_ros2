@@ -1,0 +1,6 @@
+# Robot 1's transmitter fails: nobody receives information about robot 1, while robot 1
+# still receives everyone else (one-way links 1 -> all).
+network_profile:
+  name: robot1_mute
+  links:
+    - {from: 1, to: 0, drop_rate: 1.0}
