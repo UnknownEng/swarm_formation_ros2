@@ -22,6 +22,12 @@ used for path planning around obstacles and for a weak anchor that holds the for
 at a fixed point. No node reads simulator ground truth except the sensor model and the
 metrics logger.
 
+## Demo Video
+
+Uploading a4o_0sZMx75QUqK7yskTtA.mp4…
+
+
+
 ## Contents
 
 - [Results](#results)
