@@ -24,9 +24,7 @@ metrics logger.
 
 ## Demo Video
 
-Uploading a4o_0sZMx75QUqK7yskTtA.mp4…
-
-
+https://github.com/user-attachments/assets/9dd9311d-a70c-474c-8fd0-7ad09454dfed
 
 ## Contents
 
